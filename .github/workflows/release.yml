@@ -30,7 +30,9 @@ jobs:
 
       - name: Create release archive
         run: |
-          Compress-Archive -Path PreventSleep\bin\Release\* -DestinationPath PreventSleep-${{ github.ref_name }}.zip
+          $files = Get-ChildItem -Path "PreventSleep\bin\Release\" -File |
+            Where-Object { $_.Extension -notin @('.pdb', '.xml', '.lnk', '.ico') }
+          Compress-Archive -Path $files.FullName -DestinationPath PreventSleep-${{ github.ref_name }}.zip
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2

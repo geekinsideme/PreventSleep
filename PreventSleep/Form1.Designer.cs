@@ -139,7 +139,8 @@
             this.Controls.Add(this.preventSleep);
             this.Controls.Add(this.menuStrip1);
             this.MainMenuStrip = this.menuStrip1;
-            this.Icon = new System.Drawing.Icon(System.IO.Path.Combine(System.AppDomain.CurrentDomain.BaseDirectory, "app.ico"));
+            var _iconStream = System.Reflection.Assembly.GetExecutingAssembly().GetManifestResourceStream("PreventSleep.app.ico");
+            if (_iconStream != null) this.Icon = new System.Drawing.Icon(_iconStream);
             this.Name = "Form1";
             this.Text = "PreventSleep";
             this.TopMost = true;

@@ -1,0 +1,36 @@
+name: Build and Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup MSBuild
+        uses: microsoft/setup-msbuild@v2
+
+      - name: Setup NuGet
+        uses: NuGet/setup-nuget@v2
+
+      - name: Restore NuGet packages
+        run: nuget restore PreventSleep.sln
+
+      - name: Build Release
+        run: msbuild PreventSleep.sln /p:Configuration=Release /p:Platform="Any CPU"
+
+      - name: Create release archive
+        run: |
+          Compress-Archive -Path PreventSleep\bin\Release\* -DestinationPath PreventSleep-${{ github.ref_name }}.zip
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: PreventSleep-${{ github.ref_name }}.zip
+          generate_release_notes: true

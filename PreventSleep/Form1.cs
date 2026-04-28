@@ -353,6 +353,18 @@ namespace PreventSleep
             GetClassName(hWnd, csb, csb.Capacity);
             string className = csb.ToString();
 
+            // タイトルのないウィンドウは対象外
+            if (string.IsNullOrWhiteSpace(windowText))
+            {
+                return true;
+            }
+
+            // デスクトップ/タスクバー/UWP内部系のシステムウィンドウは対象外
+            if ((windowText == "Program Manager" && className == "Progman") || className == "Shell_TrayWnd" || className == "Shell_SecondaryTrayWnd" || className == "Windows.UI.Core.CoreWindow")
+            {
+                return true;
+            }
+
             // ウィンドウの位置・サイズを取得
             wRECT rect;
             GetWindowRect(hWnd, out rect);
@@ -418,8 +430,8 @@ namespace PreventSleep
         {
             foreach (System.Windows.Forms.Screen screen in System.Windows.Forms.Screen.AllScreens)
             {
-                if (screen.Bounds.Left <= left && left < screen.Bounds.Right &&
-                    screen.Bounds.Top <= top && top < screen.Bounds.Bottom)
+                if (screen.WorkingArea.Left <= left && left < screen.WorkingArea.Right &&
+                    screen.WorkingArea.Top <= top && top < screen.WorkingArea.Bottom)
                 {
                     return screen;
                 }
@@ -431,6 +443,16 @@ namespace PreventSleep
         {
             read_settings();
             allWindows.Clear();
+            StringBuilder relocationLog = new StringBuilder();
+
+            // 各画面の作業領域（タスクバーを除く）を列挙
+            System.Windows.Forms.Screen[] allScreens = System.Windows.Forms.Screen.AllScreens;
+            for (int i = 0; i < allScreens.Length; i++)
+            {
+                System.Drawing.Rectangle wa = allScreens[i].WorkingArea;
+                relocationLog.AppendFormat("# {0}, {1}, {2}, {3}, {4}\r\n", i + 1, wa.Left, wa.Top, wa.Width, wa.Height);
+            }
+            relocationLog.AppendLine();
 
             // すべてのウィンドウを列挙
             EnumWindows(new EnumWindowsDelegate(EnumAllWindowsCallBack), IntPtr.Zero);
@@ -441,6 +463,11 @@ namespace PreventSleep
             // 各ウィンドウを処理
             foreach (WindowInfo window in allWindows)
             {
+                int oldLeft = window.rect.left;
+                int oldTop = window.rect.top;
+                int oldWidth = window.rect.right - window.rect.left;
+                int oldHeight = window.rect.bottom - window.rect.top;
+
                 int left = window.rect.left;
                 int top = window.rect.top;
                 int width = window.rect.right - window.rect.left;
@@ -487,15 +514,15 @@ namespace PreventSleep
                 {
                     // 画面外の場合は、シフト配置した位置を使用
                     targetScreen = System.Windows.Forms.Screen.PrimaryScreen;
-                    left = targetScreen.Bounds.Left + shiftX;
-                    top = targetScreen.Bounds.Top + targetScreen.Bounds.Height - titleHeight - shiftY;
+                    left = targetScreen.WorkingArea.Left + shiftX;
+                    top = targetScreen.WorkingArea.Top + targetScreen.WorkingArea.Height - titleHeight - shiftY;
 
                     // シフト値を更新（次のウィンドウ用）
                     shiftX += titleHeight;
                     shiftY += titleHeight;
 
                     // 誤ったシフト値のリセット
-                    if (shiftX > targetScreen.Bounds.Width / 2)
+                    if (shiftX > targetScreen.WorkingArea.Width / 2)
                     {
                         shiftX = 0;
                         shiftY = 0;
@@ -508,34 +535,53 @@ namespace PreventSleep
                     shiftY = 0;
                 }
 
-                // 右下が画面に収まるかを確認
-                if (left + width > targetScreen.Bounds.Right)
+                // 右下が画面内に収まらない場合は、幅・高さは維持したまま左上を補正
+                if (left + width > targetScreen.WorkingArea.Right)
                 {
-                    width = targetScreen.Bounds.Right - left;
+                    left = targetScreen.WorkingArea.Right - width;
                 }
-                if (top + height > targetScreen.Bounds.Bottom)
+                if (top + height > targetScreen.WorkingArea.Bottom)
                 {
-                    height = targetScreen.Bounds.Bottom - top;
-                }
-
-                // 左上が画面左側より左にあると補正
-                if (left < targetScreen.Bounds.Left)
-                {
-                    left = targetScreen.Bounds.Left;
+                    top = targetScreen.WorkingArea.Bottom - height;
                 }
 
-                // 左上が画面上側より上にあると補正
-                if (top < targetScreen.Bounds.Top)
+                // 右下補正の結果、左上が画面外に出た場合は WorkingArea の左上にクランプしてサイズを縮小
+                if (left < targetScreen.WorkingArea.Left)
                 {
-                    top = targetScreen.Bounds.Top;
+                    width -= targetScreen.WorkingArea.Left - left;
+                    left = targetScreen.WorkingArea.Left;
                 }
+                if (top < targetScreen.WorkingArea.Top)
+                {
+                    height -= targetScreen.WorkingArea.Top - top;
+                    top = targetScreen.WorkingArea.Top;
+                }
+                if (width < 1) width = 1;
+                if (height < 1) height = 1;
 
                 // ウィンドウを配置
                 if (IsWindow((IntPtr)window.hWnd) != 0)
                 {
                     SetWindowPos(window.hWnd, HWND_NOTOPMOST, left, top, width, height, SWP_SHOWWINDOW);
+
+                    relocationLog.AppendFormat(
+                        "\"{0}\",\"{1}\", ({2}, {3}, {4}, {5}) -> ({6}, {7}, {8}, {9})\r\n",
+                        Regex.Escape(window.windowText ?? ""),
+                        Regex.Escape(window.className ?? ""),
+                        oldLeft,
+                        oldTop,
+                        oldWidth,
+                        oldHeight,
+                        left,
+                        top,
+                        width,
+                        height);
                 }
             }
+
+            info.Text = relocationLog.Length > 0
+                ? relocationLog.ToString()
+                : "対象ウィンドウがありません。";
         }
 
         private void btnLocationSet_Click(object sender, EventArgs e)

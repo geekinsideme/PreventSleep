@@ -1,0 +1,19 @@
+{
+  "dotnet.projects.enableAutomaticRestore": true,
+  "dotnet.server.path": "C:\\Users\\hideto\\scoop\\apps\\dotnet-sdk\\current\\dotnet.exe",
+  "dotnet.server.environmentVariables": {
+    "DOTNET_ROOT": "C:\\Users\\hideto\\scoop\\apps\\dotnet-sdk\\current",
+    "PATH": "C:\\Users\\hideto\\scoop\\apps\\dotnet-sdk\\current;${env:PATH}"
+  },
+  "terminal.integrated.env.windows": {
+    "DOTNET_ROOT": "C:\\Users\\hideto\\scoop\\apps\\dotnet-sdk\\current",
+    "PATH": "C:\\Users\\hideto\\scoop\\apps\\dotnet-sdk\\current;${env:PATH}"
+  },
+  "omnisharp.dotnetPath": "C:\\Users\\hideto\\scoop\\apps\\dotnet-sdk\\current\\dotnet.exe",
+  "dotnet.server.suppressLspErrorToasts": true,
+  "dotnet.server.suppressMiscellaneousFilesToasts": true,
+  "csharp.suppressDotnetInstallWarning": true,
+  "csharp.suppressDotnetRestoreNotification": true,
+  "csharp.suppressBuildAssetsNotification": true,
+  "omnisharp.disableMSBuildDiagnosticWarning": true
+}

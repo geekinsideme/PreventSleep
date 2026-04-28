@@ -26,7 +26,7 @@ jobs:
         run: nuget restore PreventSleep.sln
 
       - name: Build Release
-        run: msbuild PreventSleep.sln /p:Configuration=Release /p:Platform="Any CPU"
+        run: msbuild PreventSleep.sln /restore /p:Configuration=Release /p:Platform="Any CPU"
 
       - name: Create release archive
         run: |

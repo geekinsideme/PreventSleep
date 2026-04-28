@@ -441,7 +441,10 @@ namespace PreventSleep
             // 各ウィンドウを処理
             foreach (WindowInfo window in allWindows)
             {
-                int left, top, width, height;
+                int left = window.rect.left;
+                int top = window.rect.top;
+                int width = window.rect.right - window.rect.left;
+                int height = window.rect.bottom - window.rect.top;
                 bool isSpecified = false;
 
                 // PreventSleep.txtの設定をチェック
@@ -466,6 +469,15 @@ namespace PreventSleep
                     top = window.rect.top;
                     width = window.rect.right - window.rect.left;
                     height = window.rect.bottom - window.rect.top;
+                }
+
+                if (width < 1)
+                {
+                    width = 1;
+                }
+                if (height < 1)
+                {
+                    height = 1;
                 }
 
                 // 左上が画面内かを確認

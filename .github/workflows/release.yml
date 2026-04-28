@@ -25,6 +25,9 @@ jobs:
       - name: Restore NuGet packages
         run: nuget restore PreventSleep.sln -PackagesDirectory packages
 
+      - name: Restore packages.config dependencies
+        run: nuget restore PreventSleep/packages.config -PackagesDirectory packages
+
       - name: Build Release
         shell: pwsh
         run: |

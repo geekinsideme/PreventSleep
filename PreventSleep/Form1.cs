@@ -307,72 +307,221 @@ namespace PreventSleep
             info.Text = windows_list;
         }
 
+        // ウィンドウ再配置用の構造体
+        private struct WindowInfo
+        {
+            public IntPtr hWnd;
+            public string windowText;
+            public string className;
+            public wRECT rect;
+            public bool isSpecified;  // PreventSleep.txtで指定されているか
+        }
+
+        private List<WindowInfo> allWindows = new List<WindowInfo>();
+
+        private bool EnumAllWindowsCallBack(IntPtr hWnd, IntPtr lparam)
+        {
+            // ウィンドウが表示されていているかチェック
+            if (!IsWindowVisible(hWnd))
+            {
+                return true;
+            }
+
+            // ウィンドウの状態を確認（最小化・最大化を除外）
+            WINDOWPLACEMENT placement = new WINDOWPLACEMENT();
+            placement.length = Marshal.SizeOf(placement);
+            GetWindowPlacement(hWnd, ref placement);
+
+            // 最小化(2)・最大化(3)されているウィンドウは除外
+            if (placement.showCmd == 2 || placement.showCmd == 3)
+            {
+                return true;
+            }
+
+            // ウィンドウのタイトルを取得
+            int textLen = GetWindowTextLength(hWnd);
+            string windowText = "";
+            if (textLen > 0)
+            {
+                StringBuilder tsb = new StringBuilder(textLen + 1);
+                GetWindowText(hWnd, tsb, tsb.Capacity);
+                windowText = tsb.ToString();
+            }
+
+            // ウィンドウのクラス名を取得
+            StringBuilder csb = new StringBuilder(256);
+            GetClassName(hWnd, csb, csb.Capacity);
+            string className = csb.ToString();
+
+            // ウィンドウの位置・サイズを取得
+            wRECT rect;
+            GetWindowRect(hWnd, out rect);
+
+            WindowInfo info = new WindowInfo();
+            info.hWnd = hWnd;
+            info.windowText = windowText;
+            info.className = className;
+            info.rect = rect;
+            info.isSpecified = false;
+
+            allWindows.Add(info);
+            return true;
+        }
+
+        /// <summary>
+        /// ウィンドウが PreventSleep.txt の設定に一致するかを判定
+        /// </summary>
+        private bool IsWindowMatched(WindowInfo window, string[] setting, int numDisplay)
+        {
+            if (setting[0].StartsWith("####") || setting[0].StartsWith("#"))
+            {
+                return false;
+            }
+
+            // 画面数チェック
+            string disp_num = "12345";
+            if (setting.Length > 6)
+            {
+                disp_num = setting[6];
+            }
+
+            if (!disp_num.Contains(numDisplay.ToString()))
+            {
+                return false;
+            }
+
+            // ウィンドウテキストチェック
+            if (setting[0] != null && setting[0] != "")
+            {
+                if (!Regex.IsMatch(window.windowText, setting[0]))
+                {
+                    return false;
+                }
+            }
+
+            // クラス名チェック
+            if (setting[1] != null && setting[1] != "")
+            {
+                if (!Regex.IsMatch(window.className, setting[1]))
+                {
+                    return false;
+                }
+            }
+
+            return true;
+        }
+
+        /// <summary>
+        /// 指定されたスクリーン内で、左上が収まるスクリーンを取得
+        /// </summary>
+        private System.Windows.Forms.Screen FindScreenForPosition(int left, int top)
+        {
+            foreach (System.Windows.Forms.Screen screen in System.Windows.Forms.Screen.AllScreens)
+            {
+                if (screen.Bounds.Left <= left && left < screen.Bounds.Right &&
+                    screen.Bounds.Top <= top && top < screen.Bounds.Bottom)
+                {
+                    return screen;
+                }
+            }
+            return null;
+        }
+
         private void location_set(int numDisplay)
         {
             read_settings();
-            foreach (string[] setting in setpos_list)
+            allWindows.Clear();
+
+            // すべてのウィンドウを列挙
+            EnumWindows(new EnumWindowsDelegate(EnumAllWindowsCallBack), IntPtr.Zero);
+
+            int shiftX = 0, shiftY = 0;  // シフト配置用の累積値
+            int titleHeight = 25;  // ウィンドウタイトル高さ（概算）
+
+            // 各ウィンドウを処理
+            foreach (WindowInfo window in allWindows)
             {
                 int left, top, width, height;
-                try
+                bool isSpecified = false;
+
+                // PreventSleep.txtの設定をチェック
+                foreach (string[] setting in setpos_list)
                 {
-                    if (setting[0].StartsWith("####"))
+                    if (IsWindowMatched(window, setting, numDisplay))
                     {
+                        // マッチしたので、その位置を使用
+                        left = Convert.ToInt32(setting[2]);
+                        top = Convert.ToInt32(setting[3]);
+                        width = Convert.ToInt32(setting[4]);
+                        height = Convert.ToInt32(setting[5]);
+                        isSpecified = true;
                         break;
                     }
-                    if (setting[0].StartsWith("#"))
-                    {
-                        continue;
-                    }
-
-                    string disp_num = "12345";
-                    if (setting.Length > 6)
-                    {
-                        disp_num = setting[6];
-                    }
-
-                    if (!disp_num.Contains(numDisplay.ToString()))
-                    {
-                        continue;
-                    }
-
-                    left = Convert.ToInt32(setting[2]);
-                    top = Convert.ToInt32(setting[3]);
-                    width = Convert.ToInt32(setting[4]);
-                    height = Convert.ToInt32(setting[5]);
-
-                    System.Windows.Forms.Screen targetScreen = null;
-                    foreach (System.Windows.Forms.Screen screen in System.Windows.Forms.Screen.AllScreens)
-                    {
-                        if (screen.Bounds.Left <= left && left < screen.Bounds.Right &&
-                            screen.Bounds.Top <= top && top < screen.Bounds.Bottom)
-                        {
-                            targetScreen = screen;
-                            break;
-                        }
-                    }
-
-                    // 起点が画面に収まっていない場合は (0,0) に変更
-                    if (targetScreen == null)
-                    {
-                        left = 0;
-                        top = 0;
-                        targetScreen = System.Windows.Forms.Screen.PrimaryScreen;
-                    }
-
-                    // 右下が画面に収まらない場合は縮小
-                    if (left + width > targetScreen.Bounds.Right)
-                    {
-                        width = targetScreen.Bounds.Right - left;
-                    }
-                    if (top + height > targetScreen.Bounds.Bottom)
-                    {
-                        height = targetScreen.Bounds.Bottom - top;
-                    }
-
-                    SetWindowsPosition(setting[0], setting[1], left, top, width, height);
                 }
-                catch
+
+                // マッチしなかった場合は、現在の表示位置を使用
+                if (!isSpecified)
                 {
+                    left = window.rect.left;
+                    top = window.rect.top;
+                    width = window.rect.right - window.rect.left;
+                    height = window.rect.bottom - window.rect.top;
+                }
+
+                // 左上が画面内かを確認
+                System.Windows.Forms.Screen targetScreen = FindScreenForPosition(left, top);
+
+                if (targetScreen == null)
+                {
+                    // 画面外の場合は、シフト配置した位置を使用
+                    targetScreen = System.Windows.Forms.Screen.PrimaryScreen;
+                    left = targetScreen.Bounds.Left + shiftX;
+                    top = targetScreen.Bounds.Top + targetScreen.Bounds.Height - titleHeight - shiftY;
+
+                    // シフト値を更新（次のウィンドウ用）
+                    shiftX += titleHeight;
+                    shiftY += titleHeight;
+
+                    // 誤ったシフト値のリセット
+                    if (shiftX > targetScreen.Bounds.Width / 2)
+                    {
+                        shiftX = 0;
+                        shiftY = 0;
+                    }
+                }
+                else
+                {
+                    // 画面内の場合はシフト値をリセット
+                    shiftX = 0;
+                    shiftY = 0;
+                }
+
+                // 右下が画面に収まるかを確認
+                if (left + width > targetScreen.Bounds.Right)
+                {
+                    width = targetScreen.Bounds.Right - left;
+                }
+                if (top + height > targetScreen.Bounds.Bottom)
+                {
+                    height = targetScreen.Bounds.Bottom - top;
+                }
+
+                // 左上が画面左側より左にあると補正
+                if (left < targetScreen.Bounds.Left)
+                {
+                    left = targetScreen.Bounds.Left;
+                }
+
+                // 左上が画面上側より上にあると補正
+                if (top < targetScreen.Bounds.Top)
+                {
+                    top = targetScreen.Bounds.Top;
+                }
+
+                // ウィンドウを配置
+                if (IsWindow((IntPtr)window.hWnd) != 0)
+                {
+                    SetWindowPos(window.hWnd, HWND_NOTOPMOST, left, top, width, height, SWP_SHOWWINDOW);
                 }
             }
         }
@@ -435,10 +584,6 @@ namespace PreventSleep
         }
 
         List<string[]> setpos_list = new List<string[]>();
-        private static string searchWindowText = null;
-        private static string searchClassName = null;
-        private static wPOINT setpoint = new wPOINT();
-        private static wSIZE setsize = new wSIZE();
 
         /// <summary>
         /// 指定された文字列をウィンドウのタイトルとクラス名に含んでいるウィンドウハンドルをすべて取得する。
@@ -447,28 +592,6 @@ namespace PreventSleep
         /// nullを指定すると、classNameだけで検索する。</param>
         /// <param name="className">ウィンドウが属するクラス名に含むべき文字列。
         /// nullを指定すると、windowTextだけで検索する。</param>
-        public static bool SetWindowsPosition(
-            string windowText, string className, int left, int top, int width, int height)
-        {
-            wPOINT point;
-            wSIZE size;
-            //検索の準備をする
-            point.X = left;
-            point.Y = top;
-            size.Width = width;
-            size.Height = height;
-            searchWindowText = windowText;
-            searchClassName = className;
-            setpoint = point;
-            setsize = size;
-
-            //ウィンドウを列挙して、対象のプロセスを探す
-            EnumWindows(new EnumWindowsDelegate(EnumWindowCallBack), IntPtr.Zero);
-
-            //結果を返す
-            return true;
-        }
-
         private delegate bool EnumWindowsDelegate(IntPtr hWnd, IntPtr lparam);
 
         [DllImport("user32.dll")]
@@ -520,56 +643,6 @@ namespace PreventSleep
         private const int SWP_SHOWWINDOW = 0x0040;
         private const int HWND_TOPMOST = -1;
         private const int HWND_NOTOPMOST = -2;
-
-        private static bool EnumWindowCallBack(IntPtr hWnd, IntPtr lparam)
-        {
-            WINDOWPLACEMENT placement = new WINDOWPLACEMENT();
-            placement.length = Marshal.SizeOf(placement);
-            GetWindowPlacement(hWnd, ref placement);
-
-            if (placement.showCmd == 2)
-            {
-                return true;
-            }
-
-            if (searchWindowText != null)
-            {
-                //ウィンドウのタイトルの長さを取得する
-                int textLen = GetWindowTextLength(hWnd);
-                if (textLen == 0)
-                {
-                    //次のウィンドウを検索
-                    return true;
-                }
-                //ウィンドウのタイトルを取得する
-                StringBuilder tsb = new StringBuilder(textLen + 1);
-                GetWindowText(hWnd, tsb, tsb.Capacity);
-                //タイトルに指定された文字列を含むか
-                if (!Regex.IsMatch(tsb.ToString(), searchWindowText))
-                {
-                    //含んでいない時は、次のウィンドウを検索
-                    return true;
-                }
-            }
-
-            if (searchClassName != null)
-            {
-                //ウィンドウのクラス名を取得する
-                StringBuilder csb = new StringBuilder(256);
-                GetClassName(hWnd, csb, csb.Capacity);
-                //クラス名に指定された文字列を含むか
-                if (!Regex.IsMatch(csb.ToString(), searchClassName))
-                {
-                    //含んでいない時は、次のウィンドウを検索
-                    return true;
-                }
-            }
-
-            SetWindowPos(hWnd, HWND_NOTOPMOST, setpoint.X, setpoint.Y, setsize.Width, setsize.Height, SWP_SHOWWINDOW);
-            SetWindowPos(hWnd, HWND_NOTOPMOST, setpoint.X, setpoint.Y, setsize.Width, setsize.Height, SWP_SHOWWINDOW);
-
-            return true;
-        }
 
         private void button2_Click(object sender, EventArgs e)
         {

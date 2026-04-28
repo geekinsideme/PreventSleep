@@ -26,7 +26,17 @@ jobs:
         run: nuget restore PreventSleep.sln
 
       - name: Build Release
-        run: msbuild PreventSleep.sln /restore /p:Configuration=Release /p:Platform="Any CPU"
+        shell: pwsh
+        run: |
+          $msbuild = Get-ChildItem -Path "C:\Program Files*\Microsoft Visual Studio\*\*\MSBuild\Current\Bin\MSBuild.exe" -Recurse -ErrorAction SilentlyContinue |
+            Where-Object { Test-Path (Join-Path $_.DirectoryName "Roslyn\Microsoft.CSharp.Core.targets") } |
+            Select-Object -First 1
+
+          if (-not $msbuild) {
+            throw "MSBuild with Roslyn targets was not found."
+          }
+
+          & $msbuild.FullName PreventSleep.sln /restore /p:Configuration=Release /p:Platform="Any CPU"
 
       - name: Create release archive
         run: |

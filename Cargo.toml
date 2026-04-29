@@ -1,6 +1,6 @@
 [package]
 name = "prevent_sleep"
-version = "2.0.0"
+version = "2.1.0"
 edition = "2021"
 description = "Prevents Windows from sleeping and repositions windows based on configuration"
 license = "MIT"
@@ -22,7 +22,8 @@ windows = { version = "0.61", features = [
     "Win32_UI_Input_KeyboardAndMouse",
 ] }
 regex = "1"
-image = { version = "0.25", default-features = false, features = ["ico"] }
+ico = "0.4"
+csv = "1"
 
 [build-dependencies]
 winres = "0.1"

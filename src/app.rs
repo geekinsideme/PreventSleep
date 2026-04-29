@@ -6,6 +6,10 @@ use std::time::{Duration, Instant};
 const CONFIG_FILE: &str = "PreventSleep.txt";
 // スリープ防止タイマー間隔
 const SLEEP_PREVENT_INTERVAL: Duration = Duration::from_secs(30);
+const LOG_BOX_WIDTH: f32 = 430.0;
+const LOG_BOX_HEIGHT: f32 = 95.0;
+const APP_WINDOW_HEIGHT: f32 = 190.0;
+const APP_NON_CLIENT_HEIGHT: f32 = 32.0;
 
 pub struct App {
     prevent_sleep: bool,
@@ -19,10 +23,12 @@ pub struct App {
 
 impl App {
     pub fn new(
-        _cc: &eframe::CreationContext<'_>,
+        cc: &eframe::CreationContext<'_>,
         prevent_sleep: bool,
         power_rx: Receiver<()>,
     ) -> Self {
+        setup_japanese_fonts(&cc.egui_ctx);
+
         let mut app = Self {
             prevent_sleep,
             log: String::new(),
@@ -39,10 +45,10 @@ impl App {
         // 起動時に位置を設定
         let num = window_manager::enum_monitors().len();
         app.last_num_display = num;
-        app.log = window_manager::relocate_windows(
+        app.log = format_log_with_config_path(window_manager::relocate_windows(
             &config::load_rules(CONFIG_FILE),
             num,
-        );
+        ));
 
         app
     }
@@ -50,10 +56,29 @@ impl App {
     fn do_location_set(&mut self) {
         let num = window_manager::enum_monitors().len();
         self.last_num_display = num;
-        self.log = window_manager::relocate_windows(
+        self.log = format_log_with_config_path(window_manager::relocate_windows(
             &config::load_rules(CONFIG_FILE),
             num,
-        );
+        ));
+    }
+
+    fn move_self_to_primary_bottom_left(&self, ctx: &egui::Context) {
+        let monitors = window_manager::enum_monitors();
+        if let Some(primary) = monitors.first() {
+            let x = primary.left as f32;
+            let y = ((primary.bottom as f32) - (APP_WINDOW_HEIGHT + APP_NON_CLIENT_HEIGHT))
+                .max(primary.top as f32);
+            ctx.send_viewport_cmd(egui::ViewportCommand::OuterPosition(egui::pos2(x, y)));
+        }
+    }
+
+    fn do_location_set_cascading(&mut self) {
+        let num = window_manager::enum_monitors().len();
+        self.last_num_display = num;
+        self.log = format_log_with_config_path(window_manager::relocate_windows_cascading(
+            &config::load_rules(CONFIG_FILE),
+            num,
+        ));
     }
 
     fn do_list_windows(&mut self) {
@@ -82,6 +107,41 @@ impl App {
     }
 }
 
+fn format_log_with_config_path(log_body: String) -> String {
+    let config_path = config::resolve_rules_path(CONFIG_FILE);
+    format!("# {}\r\n{}", config_path.display(), log_body)
+}
+
+fn setup_japanese_fonts(ctx: &egui::Context) {
+    let mut fonts = egui::FontDefinitions::default();
+
+    // Windows 環境の代表的な日本語フォント候補を順に試す
+    let candidates = [
+        r"C:\Windows\Fonts\YuGothR.ttc",
+        r"C:\Windows\Fonts\meiryo.ttc",
+        r"C:\Windows\Fonts\msgothic.ttc",
+    ];
+
+    for path in candidates {
+        if let Ok(bytes) = std::fs::read(path) {
+            let font_name = "jp_font".to_string();
+            fonts
+                .font_data
+                .insert(font_name.clone(), egui::FontData::from_owned(bytes).into());
+
+            if let Some(family) = fonts.families.get_mut(&egui::FontFamily::Proportional) {
+                family.insert(0, font_name.clone());
+            }
+            if let Some(family) = fonts.families.get_mut(&egui::FontFamily::Monospace) {
+                family.insert(0, font_name);
+            }
+
+            ctx.set_fonts(fonts);
+            return;
+        }
+    }
+}
+
 impl eframe::App for App {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         // --- タイマー処理 ---
@@ -97,6 +157,7 @@ impl eframe::App for App {
         let cur_num = window_manager::enum_monitors().len();
         if cur_num != self.last_num_display && cur_num > 0 {
             self.do_location_set();
+            self.move_self_to_primary_bottom_left(ctx);
         }
 
         // 電源イベント受信チェック (モニターON → 2秒後に再配置)
@@ -107,6 +168,7 @@ impl eframe::App for App {
             if pending.elapsed() >= Duration::from_secs(2) {
                 self.pending_relocate = None;
                 self.do_location_set();
+                self.move_self_to_primary_bottom_left(ctx);
             }
         }
 
@@ -115,8 +177,27 @@ impl eframe::App for App {
 
         // --- UI 描画 ---
         egui::CentralPanel::default().show(ctx, |ui| {
+            // 固定サイズのログテキストボックス + スクロールバー
+            egui::Frame::group(ui.style()).show(ui, |ui| {
+                ui.set_width(LOG_BOX_WIDTH);
+                egui::ScrollArea::both()
+                    .id_salt("log_scroll")
+                    .max_width(LOG_BOX_WIDTH)
+                    .max_height(LOG_BOX_HEIGHT)
+                    .show(ui, |ui| {
+                        ui.add_sized(
+                            [LOG_BOX_WIDTH - 8.0, LOG_BOX_HEIGHT - 8.0],
+                            egui::TextEdit::multiline(&mut self.log)
+                                .font(egui::TextStyle::Monospace)
+                                .desired_width(LOG_BOX_WIDTH - 8.0),
+                        );
+                    });
+            });
+
+            ui.add_space(4.0);
+
+            // テキストボックスの下にチェックボックス
             ui.horizontal(|ui| {
-                // スリープ防止チェックボックス
                 if ui.checkbox(&mut self.prevent_sleep, "スリープ防止").changed() {
                     if self.prevent_sleep {
                         sleep_prevention::prevent_sleep();
@@ -126,36 +207,32 @@ impl eframe::App for App {
                 }
             });
 
+            ui.add_space(2.0);
+
+            // ボタン類はテキストボックスの下
             ui.horizontal(|ui| {
-                if ui.button("Set Location").clicked() {
+                if ui.button("配置適用").clicked() {
                     self.do_location_set();
                 }
-                if ui.button("List Windows").clicked() {
+                if ui.button("階段配置").clicked() {
+                    self.do_location_set_cascading();
+                }
+                if ui.button("ウィンドウ一覧").clicked() {
                     self.do_list_windows();
                 }
-                if ui.button("1-Display").clicked() {
+                if ui.button("1画面配置").clicked() {
                     self.last_num_display = 1;
-                    self.log = window_manager::relocate_windows(
+                    self.log = format_log_with_config_path(window_manager::relocate_windows(
                         &config::load_rules(CONFIG_FILE),
                         1,
-                    );
+                    ));
                 }
-                if ui.button("X").clicked() {
+                if ui.button("モニターOFF").clicked() {
                     sleep_prevention::release_sleep_prevention();
                     self.prevent_sleep = false;
                     window_manager::turn_off_monitor();
                 }
             });
-
-            egui::ScrollArea::vertical()
-                .auto_shrink([false, false])
-                .show(ui, |ui| {
-                    ui.add(
-                        egui::TextEdit::multiline(&mut self.log)
-                            .desired_width(f32::INFINITY)
-                            .font(egui::TextStyle::Monospace),
-                    );
-                });
         });
     }
 }

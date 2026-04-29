@@ -8,10 +8,13 @@ use windows::Win32::Graphics::Gdi::{
     EnumDisplayMonitors, GetMonitorInfoW, HDC, HMONITOR, MONITORINFO,
 };
 use windows::Win32::UI::WindowsAndMessaging::{
+    BringWindowToTop,
     EnumWindows, GetClassNameW, GetWindowPlacement, GetWindowRect, GetWindowTextLengthW,
-    GetWindowTextW, IsWindow, IsWindowVisible, SetWindowPos, HWND_NOTOPMOST, SWP_SHOWWINDOW,
-    SW_MAXIMIZE, SW_MINIMIZE, WINDOWPLACEMENT,
+    GetWindowTextW, GetWindowThreadProcessId, IsWindow, IsWindowVisible, SetWindowPos,
+    HWND_NOTOPMOST, HWND_TOP, HWND_TOPMOST, SWP_NOZORDER, SWP_SHOWWINDOW, SW_MAXIMIZE,
+    SW_MINIMIZE, WINDOWPLACEMENT,
 };
+use windows::Win32::System::Threading::GetCurrentProcessId;
 
 #[derive(Debug, Clone)]
 pub struct MonitorRect {
@@ -87,6 +90,13 @@ pub fn enum_windows_list() -> Vec<WindowInfo> {
 
 unsafe extern "system" fn enum_all_windows_proc(hwnd: HWND, lparam: LPARAM) -> BOOL {
     let windows = &mut *(lparam.0 as *mut Vec<WindowInfo>);
+
+    // PreventSleep 自身のウィンドウは処理対象外
+    let mut pid: u32 = 0;
+    let _ = GetWindowThreadProcessId(hwnd, Some(&mut pid));
+    if pid == GetCurrentProcessId() {
+        return BOOL(1);
+    }
 
     if !IsWindowVisible(hwnd).as_bool() {
         return BOOL(1);
@@ -181,6 +191,14 @@ fn find_monitor_for_pos(left: i32, top: i32, monitors: &[MonitorRect]) -> Option
 }
 
 pub fn relocate_windows(rules: &[Rule], num_display: usize) -> String {
+    relocate_windows_impl(rules, num_display, false)
+}
+
+pub fn relocate_windows_cascading(rules: &[Rule], num_display: usize) -> String {
+    relocate_windows_impl(rules, num_display, true)
+}
+
+fn relocate_windows_impl(rules: &[Rule], num_display: usize, cascade_unspecified: bool) -> String {
     let monitors = enum_monitors();
     let windows = enum_windows_list();
 
@@ -205,8 +223,10 @@ pub fn relocate_windows(rules: &[Rule], num_display: usize) -> String {
     });
 
     const TITLE_HEIGHT: i32 = 25;
+    const CASCADE_OFFSET: i32 = 35;
     let mut shift_x = 0i32;
     let mut shift_y = 0i32;
+    let mut cascade_index = 0i32;
 
     for win in &windows {
         let old_left = win.rect.left;
@@ -231,11 +251,21 @@ pub fn relocate_windows(rules: &[Rule], num_display: usize) -> String {
             }
         }
 
+        let should_cascade = cascade_unspecified && !is_specified;
+
         if !is_specified {
-            left = win.rect.left;
-            top = win.rect.top;
-            width = win.rect.right - win.rect.left;
-            height = win.rect.bottom - win.rect.top;
+            if should_cascade {
+                left = cascade_index * CASCADE_OFFSET;
+                top = cascade_index * CASCADE_OFFSET;
+                width = win.rect.right - win.rect.left;
+                height = win.rect.bottom - win.rect.top;
+                cascade_index += 1;
+            } else {
+                left = win.rect.left;
+                top = win.rect.top;
+                width = win.rect.right - win.rect.left;
+                height = win.rect.bottom - win.rect.top;
+            }
         }
 
         width = width.max(1);
@@ -245,13 +275,15 @@ pub fn relocate_windows(rules: &[Rule], num_display: usize) -> String {
             m.clone()
         } else {
             let m = primary.clone();
-            left = m.left + shift_x;
-            top = m.top + m.height() - TITLE_HEIGHT - shift_y;
-            shift_x += TITLE_HEIGHT;
-            shift_y += TITLE_HEIGHT;
-            if shift_x > m.width() / 2 {
-                shift_x = 0;
-                shift_y = 0;
+            if !cascade_unspecified {
+                left = m.left + shift_x;
+                top = m.top + m.height() - TITLE_HEIGHT - shift_y;
+                shift_x += TITLE_HEIGHT;
+                shift_y += TITLE_HEIGHT;
+                if shift_x > m.width() / 2 {
+                    shift_x = 0;
+                    shift_y = 0;
+                }
             }
             m
         };
@@ -276,15 +308,49 @@ pub fn relocate_windows(rules: &[Rule], num_display: usize) -> String {
         unsafe {
             let hwnd = HWND(win.hwnd as *mut _);
             if IsWindow(Some(hwnd)).as_bool() {
-                let _ = SetWindowPos(
-                    hwnd,
-                    Some(HWND_NOTOPMOST),
-                    left,
-                    top,
-                    width,
-                    height,
-                    SWP_SHOWWINDOW,
-                );
+                if should_cascade {
+                    // Cascading対象は移動のたびに最前面へ。
+                    // TOPMOST -> NOTOPMOST の順で強制的に前面へ出しつつ、常時TOPMOST化はしない。
+                    let _ = SetWindowPos(
+                        hwnd,
+                        Some(HWND_TOPMOST),
+                        left,
+                        top,
+                        width,
+                        height,
+                        SWP_SHOWWINDOW,
+                    );
+                    let _ = SetWindowPos(
+                        hwnd,
+                        Some(HWND_TOP),
+                        left,
+                        top,
+                        width,
+                        height,
+                        SWP_SHOWWINDOW,
+                    );
+                    let _ = SetWindowPos(
+                        hwnd,
+                        Some(HWND_NOTOPMOST),
+                        left,
+                        top,
+                        width,
+                        height,
+                        SWP_SHOWWINDOW,
+                    );
+                    let _ = BringWindowToTop(hwnd);
+                } else {
+                    // 通常移動は位置・サイズのみ更新し、Zオーダーは維持する。
+                    let _ = SetWindowPos(
+                        hwnd,
+                        Some(HWND_NOTOPMOST),
+                        left,
+                        top,
+                        width,
+                        height,
+                        SWP_SHOWWINDOW | SWP_NOZORDER,
+                    );
+                }
             }
         }
 

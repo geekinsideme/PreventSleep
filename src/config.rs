@@ -12,8 +12,25 @@ pub struct Rule {
 
 /// PreventSleep.txt を読み込んでルールのリストを返す。
 /// ファイルが存在しない / 読み取れない場合は空リストを返す。
+pub fn resolve_rules_path(path: &str) -> std::path::PathBuf {
+    let path_buf = std::path::PathBuf::from(path);
+    if path_buf.is_absolute() {
+        return path_buf;
+    }
+
+    match std::env::current_exe()
+        .ok()
+        .and_then(|p| p.parent().map(|d| d.join(&path_buf)))
+    {
+        Some(p) => p,
+        None => path_buf,
+    }
+}
+
 pub fn load_rules(path: &str) -> Vec<Rule> {
-    let content = match std::fs::read_to_string(path) {
+    let resolved_path = resolve_rules_path(path);
+
+    let content = match std::fs::read_to_string(&resolved_path) {
         Ok(c) => c,
         Err(_) => return Vec::new(),
     };
@@ -26,29 +43,42 @@ pub fn load_rules(path: &str) -> Vec<Rule> {
             continue;
         }
 
-        let cols: Vec<&str> = line.splitn(8, ',').collect();
-        if cols.len() < 6 {
-            continue;
-        }
+        let mut rdr = csv::ReaderBuilder::new()
+            .has_headers(false)
+            .flexible(true)
+            .from_reader(line.as_bytes());
 
-        // 最初のフィールドが "####" または "#" で始まる行はコメント扱い
-        if cols[0].starts_with("####") || cols[0].starts_with('#') {
-            continue;
-        }
-
-        let x = cols[2].trim().parse::<i32>().unwrap_or(0);
-        let y = cols[3].trim().parse::<i32>().unwrap_or(0);
-        let w = cols[4].trim().parse::<i32>().unwrap_or(100);
-        let h = cols[5].trim().parse::<i32>().unwrap_or(100);
-        let displays = if cols.len() > 6 {
-            cols[6].trim().to_string()
-        } else {
-            "12345".to_string()
+        let rec = match rdr.records().next() {
+            Some(Ok(r)) => r,
+            _ => continue,
         };
 
+        if rec.len() < 6 {
+            continue;
+        }
+
+        let title_regex = rec.get(0).unwrap_or("").trim().to_string();
+        let class_regex = rec.get(1).unwrap_or("").trim().to_string();
+
+        // 最初のフィールドが "####" または "#" で始まる行はコメント扱い
+        if title_regex.starts_with("####") || title_regex.starts_with('#') {
+            continue;
+        }
+
+        let x = rec.get(2).unwrap_or("0").trim().parse::<i32>().unwrap_or(0);
+        let y = rec.get(3).unwrap_or("0").trim().parse::<i32>().unwrap_or(0);
+        let w = rec.get(4).unwrap_or("100").trim().parse::<i32>().unwrap_or(100);
+        let h = rec.get(5).unwrap_or("100").trim().parse::<i32>().unwrap_or(100);
+        let displays = rec
+            .get(6)
+            .map(|s| s.trim())
+            .filter(|s| !s.is_empty())
+            .unwrap_or("12345")
+            .to_string();
+
         rules.push(Rule {
-            title_regex: cols[0].trim().to_string(),
-            class_regex: cols[1].trim().to_string(),
+            title_regex,
+            class_regex,
             x,
             y,
             w,

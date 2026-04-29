@@ -1,3 +1,5 @@
+#![windows_subsystem = "windows"]
+
 mod app;
 mod config;
 mod power_monitor;
@@ -44,14 +46,19 @@ fn main() {
     });
 
     let win_width = 460.0_f32;
-    let win_height = 320.0_f32;
+    let win_height = 190.0_f32;
+    // inner_size だけで配置するとタイトルバー/枠分だけ下に食い込むため補正する
+    const NON_CLIENT_HEIGHT: f32 = 32.0;
     let init_x = primary.left as f32;
-    let init_y = (primary.bottom as f32) - win_height;
+    let init_y = ((primary.bottom as f32) - (win_height + NON_CLIENT_HEIGHT)).max(primary.top as f32);
 
     let native_options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
-            .with_title("PreventSleep v2.0.0")
+            .with_title("PreventSleep v2.1.0")
             .with_inner_size([win_width, win_height])
+            .with_min_inner_size([win_width, win_height])
+            .with_max_inner_size([win_width, win_height])
+            .with_resizable(false)
             .with_position([init_x, init_y])
             .with_always_on_top()
             .with_icon(load_icon()),
@@ -66,19 +73,25 @@ fn main() {
 }
 
 fn load_icon() -> egui::IconData {
-    // assets/app.ico をコンパイル時に埋め込む
-    let ico_bytes = include_bytes!("../assets/app.ico");
-    // ICO フォーマットから最初の画像を読み取り、RGBA に変換する
-    // ico クレートなしで簡易的に処理: 読み取れない場合は空の 1x1 アイコンを返す
-    if let Ok(img) = image::load_from_memory(ico_bytes) {
-        let img = img.into_rgba8();
-        let (w, h) = img.dimensions();
-        return egui::IconData {
-            rgba: img.into_raw(),
-            width: w,
-            height: h,
-        };
+    let bytes = include_bytes!("../assets/app.ico");
+    let cursor = std::io::Cursor::new(bytes.as_slice());
+
+    if let Ok(icon_dir) = ico::IconDir::read(cursor) {
+        if let Some(entry) = icon_dir
+            .entries()
+            .iter()
+            .max_by_key(|e| (e.width() as u32) * (e.height() as u32))
+        {
+            if let Ok(image) = entry.decode() {
+                return egui::IconData {
+                    rgba: image.rgba_data().to_vec(),
+                    width: image.width(),
+                    height: image.height(),
+                };
+            }
+        }
     }
+
     egui::IconData {
         rgba: vec![0u8; 4],
         width: 1,

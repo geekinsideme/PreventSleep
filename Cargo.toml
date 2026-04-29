@@ -1,6 +1,6 @@
 [package]
 name = "prevent_sleep"
-version = "2.1.0"
+version = "2.1.1"
 edition = "2021"
 description = "Prevents Windows from sleeping and repositions windows based on configuration"
 license = "MIT"

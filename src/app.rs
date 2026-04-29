@@ -185,11 +185,20 @@ impl eframe::App for App {
                     .max_width(LOG_BOX_WIDTH)
                     .max_height(LOG_BOX_HEIGHT)
                     .show(ui, |ui| {
-                        ui.add_sized(
-                            [LOG_BOX_WIDTH - 8.0, LOG_BOX_HEIGHT - 8.0],
+                        let mut layouter = |ui: &egui::Ui, text: &str, _wrap_width: f32| {
+                            let layout_job = egui::text::LayoutJob::simple(
+                                text.to_owned(),
+                                egui::TextStyle::Monospace.resolve(ui.style()),
+                                ui.visuals().text_color(),
+                                f32::INFINITY,
+                            );
+                            ui.fonts(|f| f.layout_job(layout_job))
+                        };
+                        ui.add(
                             egui::TextEdit::multiline(&mut self.log)
                                 .font(egui::TextStyle::Monospace)
-                                .desired_width(LOG_BOX_WIDTH - 8.0),
+                                .desired_width(f32::INFINITY)
+                                .layouter(&mut layouter),
                         );
                     });
             });

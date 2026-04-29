@@ -54,13 +54,12 @@ fn main() {
 
     let native_options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
-            .with_title("PreventSleep v2.1.0")
+            .with_title("PreventSleep v2.1.1")
             .with_inner_size([win_width, win_height])
             .with_min_inner_size([win_width, win_height])
             .with_max_inner_size([win_width, win_height])
             .with_resizable(false)
             .with_position([init_x, init_y])
-            .with_always_on_top()
             .with_icon(load_icon()),
         ..Default::default()
     };

@@ -1,0 +1,33 @@
+[package]
+name = "prevent_sleep"
+version = "2.0.0"
+edition = "2021"
+description = "Prevents Windows from sleeping and repositions windows based on configuration"
+license = "MIT"
+
+[[bin]]
+name = "PreventSleep"
+path = "src/main.rs"
+
+[dependencies]
+eframe = { version = "0.31", features = ["default"] }
+egui = "0.31"
+windows = { version = "0.61", features = [
+    "Win32_Foundation",
+    "Win32_UI_WindowsAndMessaging",
+    "Win32_System_Power",
+    "Win32_System_Threading",
+    "Win32_System_LibraryLoader",
+    "Win32_Graphics_Gdi",
+    "Win32_UI_Input_KeyboardAndMouse",
+] }
+regex = "1"
+image = { version = "0.25", default-features = false, features = ["ico"] }
+
+[build-dependencies]
+winres = "0.1"
+
+[profile.release]
+opt-level = 3
+lto = true
+strip = true

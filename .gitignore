@@ -1,5 +1,16 @@
+# old/ directory (legacy C# source - not tracked)
+old/
+
+# Visual Studio workspace cache
+.vs/
+
+# Rust build output
+/target/
+
+# Keep Cargo.lock in version control for binaries
+# (do not add Cargo.lock to .gitignore for executable crates)
+
 .vs/**/*.vsidx
-*.lock
 *.cache
 *.suo
 *.lnk

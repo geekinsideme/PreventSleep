@@ -16,39 +16,28 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Setup MSBuild
-        uses: microsoft/setup-msbuild@v2
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-pc-windows-msvc
 
-      - name: Setup NuGet
-        uses: NuGet/setup-nuget@v2
+      - name: Cache Cargo registry
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
 
-      - name: Restore NuGet packages
-        run: nuget restore PreventSleep.sln -PackagesDirectory packages
-
-      - name: Restore packages.config dependencies
-        run: nuget restore PreventSleep/packages.config -PackagesDirectory packages
-
-      - name: Build Release
-        shell: pwsh
-        run: |
-          $msbuild = Get-ChildItem -Path "C:\Program Files*\Microsoft Visual Studio\*\*\MSBuild\Current\Bin\MSBuild.exe" -Recurse -ErrorAction SilentlyContinue |
-            Where-Object { Test-Path (Join-Path $_.DirectoryName "Roslyn\Microsoft.CSharp.Core.targets") } |
-            Select-Object -First 1
-
-          if (-not $msbuild) {
-            throw "MSBuild with Roslyn targets was not found."
-          }
-
-          & $msbuild.FullName PreventSleep.sln /restore /p:Configuration=Release /p:Platform="Any CPU"
-
-      - name: Create release archive
-        run: |
-          $files = Get-ChildItem -Path "PreventSleep\bin\Release\" -File |
-            Where-Object { $_.Extension -notin @('.pdb', '.xml', '.lnk', '.ico') }
-          Compress-Archive -Path $files.FullName -DestinationPath PreventSleep-${{ github.ref_name }}.zip
+      - name: Build release binary
+        run: cargo build --release --target x86_64-pc-windows-msvc
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          files: PreventSleep-${{ github.ref_name }}.zip
+          files: target/x86_64-pc-windows-msvc/release/PreventSleep.exe
           generate_release_notes: true
+

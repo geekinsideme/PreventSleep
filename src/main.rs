@@ -46,7 +46,7 @@ fn main() {
     });
 
     let win_width = 460.0_f32;
-    let win_height = 190.0_f32;
+    let win_height = 150.0_f32;
     // inner_size だけで配置するとタイトルバー/枠分だけ下に食い込むため補正する
     const NON_CLIENT_HEIGHT: f32 = 32.0;
     let init_x = primary.left as f32;

@@ -7,8 +7,8 @@ const CONFIG_FILE: &str = "PreventSleep.txt";
 // スリープ防止タイマー間隔
 const SLEEP_PREVENT_INTERVAL: Duration = Duration::from_secs(30);
 const LOG_BOX_WIDTH: f32 = 430.0;
-const LOG_BOX_HEIGHT: f32 = 95.0;
-const APP_WINDOW_HEIGHT: f32 = 190.0;
+const LOG_BOX_HEIGHT: f32 = 55.0;
+const APP_WINDOW_HEIGHT: f32 = 150.0;
 const APP_NON_CLIENT_HEIGHT: f32 = 32.0;
 
 pub struct App {

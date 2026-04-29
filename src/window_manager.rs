@@ -247,7 +247,7 @@ fn relocate_windows_impl(rules: &[Rule], num_display: usize, cascade_unspecified
                 width = rule.w;
                 height = rule.h;
                 is_specified = true;
-                break;
+                // 最後にマッチしたルールを適用するため break しない
             }
         }
 

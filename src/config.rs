@@ -60,8 +60,13 @@ pub fn load_rules(path: &str) -> Vec<Rule> {
         let title_regex = rec.get(0).unwrap_or("").trim().to_string();
         let class_regex = rec.get(1).unwrap_or("").trim().to_string();
 
-        // 最初のフィールドが "####" または "#" で始まる行はコメント扱い
-        if title_regex.starts_with("####") || title_regex.starts_with('#') {
+        // 最初のフィールドが "####" （4文字以上の#）で始まる行以降は読み込み終了
+        if title_regex.starts_with("####") {
+            break;
+        }
+
+        // "#" で始まる行はコメント扱い
+        if title_regex.starts_with('#') {
             continue;
         }
 

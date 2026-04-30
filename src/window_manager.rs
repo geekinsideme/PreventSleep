@@ -234,6 +234,12 @@ fn relocate_windows_impl(rules: &[Rule], num_display: usize, cascade_unspecified
         let old_w = win.rect.right - win.rect.left;
         let old_h = win.rect.bottom - win.rect.top;
 
+        // 設定ファイル上の目標位置（ルール未指定時は -1）
+        let mut target_left = -1;
+        let mut target_top = -1;
+        let mut target_w = -1;
+        let mut target_h = -1;
+
         let mut left = old_left;
         let mut top = old_top;
         let mut width = old_w;
@@ -246,6 +252,10 @@ fn relocate_windows_impl(rules: &[Rule], num_display: usize, cascade_unspecified
                 top = rule.y;
                 width = rule.w;
                 height = rule.h;
+                target_left = rule.x;
+                target_top = rule.y;
+                target_w = rule.w;
+                target_h = rule.h;
                 is_specified = true;
                 // 最後にマッチしたルールを適用するため break しない
             }
@@ -355,13 +365,17 @@ fn relocate_windows_impl(rules: &[Rule], num_display: usize, cascade_unspecified
         }
 
         log.push_str(&format!(
-            "\"{}\",\"{}\", ({}, {}, {}, {}) -> ({}, {}, {}, {})\r\n",
+            "\"{}\",\"{}\", ({}, {}, {}, {}) -> ({}, {}, {}, {}) -> ({}, {}, {}, {})\r\n",
             regex::escape(&win.title),
             regex::escape(&win.class_name),
             old_left,
             old_top,
             old_w,
             old_h,
+            target_left,
+            target_top,
+            target_w,
+            target_h,
             left,
             top,
             width,

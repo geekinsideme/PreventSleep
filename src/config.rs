@@ -38,6 +38,10 @@ pub fn load_rules(path: &str) -> Vec<Rule> {
     let mut rules = Vec::new();
     for line in content.lines() {
         let line = line.trim();
+        // 区切り行（### / #### など）以降は読み込み終了
+        if line.starts_with("###") {
+            break;
+        }
         // コメント行・空行はスキップ
         if line.is_empty() || line.starts_with('#') {
             continue;
@@ -59,11 +63,6 @@ pub fn load_rules(path: &str) -> Vec<Rule> {
 
         let title_regex = rec.get(0).unwrap_or("").trim().to_string();
         let class_regex = rec.get(1).unwrap_or("").trim().to_string();
-
-        // 最初のフィールドが "####" （4文字以上の#）で始まる行以降は読み込み終了
-        if title_regex.starts_with("####") {
-            break;
-        }
 
         // "#" で始まる行はコメント扱い
         if title_regex.starts_with('#') {

@@ -54,7 +54,7 @@ fn main() {
 
     let native_options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
-            .with_title("PreventSleep v2.1.2")
+            .with_title("PreventSleep v2.1.3")
             .with_inner_size([win_width, win_height])
             .with_min_inner_size([win_width, win_height])
             .with_max_inner_size([win_width, win_height])
@@ -79,7 +79,7 @@ fn load_icon() -> egui::IconData {
         if let Some(entry) = icon_dir
             .entries()
             .iter()
-            .max_by_key(|e| (e.width() as u32) * (e.height() as u32))
+            .max_by_key(|e| e.width() * e.height())
         {
             if let Ok(image) = entry.decode() {
                 return egui::IconData {

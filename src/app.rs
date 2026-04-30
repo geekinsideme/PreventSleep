@@ -226,20 +226,22 @@ impl eframe::App for App {
                 if ui.button("階段配置").clicked() {
                     self.do_location_set_cascading();
                 }
-                if ui.button("ウィンドウ一覧").clicked() {
-                    self.do_list_windows();
-                }
-                if ui.button("1画面配置").clicked() {
+                if ui.button("１画面配置").clicked() {
                     self.last_num_display = 1;
                     self.log = format_log_with_config_path(window_manager::relocate_windows(
                         &config::load_rules(CONFIG_FILE),
                         1,
                     ));
                 }
+                if ui.button("ウィンドウ一覧").clicked() {
+                    self.do_list_windows();
+                }
                 if ui.button("モニターOFF").clicked() {
                     sleep_prevention::release_sleep_prevention();
                     self.prevent_sleep = false;
-                    window_manager::turn_off_monitor();
+                    std::thread::spawn(|| {
+                        window_manager::turn_off_monitor();
+                    });
                 }
             });
         });

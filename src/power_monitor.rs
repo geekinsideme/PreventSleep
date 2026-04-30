@@ -83,10 +83,10 @@ pub fn start_power_monitor(sender: Sender<()>) {
             );
 
             // 電源設定通知を登録
-            let mut guid = GUID_MONITOR_POWER_ON;
+            let guid = GUID_MONITOR_POWER_ON;
             let _ = RegisterPowerSettingNotification(
                 windows::Win32::Foundation::HANDLE(hwnd.0),
-                &mut guid,
+                &guid,
                 DEVICE_NOTIFY_WINDOW_HANDLE,
             );
 

@@ -11,7 +11,7 @@ use windows::Win32::UI::WindowsAndMessaging::{
     BringWindowToTop,
     EnumWindows, GetClassNameW, GetWindowPlacement, GetWindowRect, GetWindowTextLengthW,
     GetWindowTextW, GetWindowThreadProcessId, IsWindow, IsWindowVisible, SetWindowPos,
-    HWND_NOTOPMOST, HWND_TOP, HWND_TOPMOST, SWP_NOZORDER, SWP_SHOWWINDOW, SW_MAXIMIZE,
+    HWND_NOTOPMOST, HWND_TOP, HWND_TOPMOST, SWP_NOSIZE, SWP_NOZORDER, SWP_SHOWWINDOW, SW_MAXIMIZE,
     SW_MINIMIZE, WINDOWPLACEMENT,
 };
 use windows::Win32::System::Threading::GetCurrentProcessId;
@@ -44,6 +44,25 @@ pub fn enum_monitors() -> Vec<MonitorRect> {
         );
     }
     monitors
+}
+
+pub fn monitor_with_origin_top_left(monitors: &[MonitorRect]) -> Option<MonitorRect> {
+    monitors
+        .iter()
+        .find(|m| m.left == 0 && m.top == 0)
+        .cloned()
+        .or_else(|| {
+            monitors
+                .iter()
+                .find(|m| m.left <= 0 && 0 < m.right && m.top <= 0 && 0 < m.bottom)
+                .cloned()
+        })
+        .or_else(|| {
+            monitors
+                .iter()
+                .min_by_key(|m| m.left.abs() + m.top.abs())
+                .cloned()
+        })
 }
 
 unsafe extern "system" fn monitor_enum_proc(
@@ -86,6 +105,70 @@ pub fn enum_windows_list() -> Vec<WindowInfo> {
         );
     }
     windows
+}
+
+pub fn relocate_preventsleep_window_to_origin_bottom_left() {
+    let monitors = enum_monitors();
+    let Some(target) = monitor_with_origin_top_left(&monitors) else {
+        return;
+    };
+
+    const APP_WINDOW_HEIGHT: i32 = 190;
+    const APP_NON_CLIENT_HEIGHT: i32 = 32;
+    let target_x = target.left;
+    let target_y = (target.bottom - (APP_WINDOW_HEIGHT + APP_NON_CLIENT_HEIGHT)).max(target.top);
+
+    #[derive(Copy, Clone)]
+    struct RelocateTarget {
+        x: i32,
+        y: i32,
+    }
+
+    unsafe extern "system" fn enum_preventsleep_windows_proc(hwnd: HWND, lparam: LPARAM) -> BOOL {
+        if !IsWindowVisible(hwnd).as_bool() {
+            return BOOL(1);
+        }
+
+        let text_len = GetWindowTextLengthW(hwnd);
+        if text_len <= 0 {
+            return BOOL(1);
+        }
+
+        let mut title_buf = vec![0u16; (text_len + 1) as usize];
+        GetWindowTextW(hwnd, &mut title_buf);
+        let title = OsString::from_wide(&title_buf[..text_len as usize])
+            .to_string_lossy()
+            .to_string();
+
+        // GUI モードの PreventSleep ウィンドウだけを対象にする
+        if !title.starts_with("PreventSleep") {
+            return BOOL(1);
+        }
+
+        let target = *(lparam.0 as *const RelocateTarget);
+        let _ = SetWindowPos(
+            hwnd,
+            Some(HWND_NOTOPMOST),
+            target.x,
+            target.y,
+            0,
+            0,
+            SWP_SHOWWINDOW | SWP_NOZORDER | SWP_NOSIZE,
+        );
+
+        BOOL(1)
+    }
+
+    let target = RelocateTarget {
+        x: target_x,
+        y: target_y,
+    };
+    unsafe {
+        let _ = EnumWindows(
+            Some(enum_preventsleep_windows_proc),
+            LPARAM(&target as *const _ as isize),
+        );
+    }
 }
 
 unsafe extern "system" fn enum_all_windows_proc(hwnd: HWND, lparam: LPARAM) -> BOOL {

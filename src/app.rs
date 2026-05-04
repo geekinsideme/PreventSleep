@@ -49,36 +49,39 @@ impl App {
             &config::load_rules(CONFIG_FILE),
             num,
         ));
+        app.move_self_to_origin_bottom_left(&cc.egui_ctx);
 
         app
     }
 
-    fn do_location_set(&mut self) {
+    fn do_location_set(&mut self, ctx: &egui::Context) {
         let num = window_manager::enum_monitors().len();
         self.last_num_display = num;
         self.log = format_log_with_config_path(window_manager::relocate_windows(
             &config::load_rules(CONFIG_FILE),
             num,
         ));
+        self.move_self_to_origin_bottom_left(ctx);
     }
 
-    fn move_self_to_primary_bottom_left(&self, ctx: &egui::Context) {
+    fn move_self_to_origin_bottom_left(&self, ctx: &egui::Context) {
         let monitors = window_manager::enum_monitors();
-        if let Some(primary) = monitors.first() {
-            let x = primary.left as f32;
-            let y = ((primary.bottom as f32) - (APP_WINDOW_HEIGHT + APP_NON_CLIENT_HEIGHT))
-                .max(primary.top as f32);
+        if let Some(origin_monitor) = window_manager::monitor_with_origin_top_left(&monitors) {
+            let x = origin_monitor.left as f32;
+            let y = ((origin_monitor.bottom as f32) - (APP_WINDOW_HEIGHT + APP_NON_CLIENT_HEIGHT))
+                .max(origin_monitor.top as f32);
             ctx.send_viewport_cmd(egui::ViewportCommand::OuterPosition(egui::pos2(x, y)));
         }
     }
 
-    fn do_location_set_cascading(&mut self) {
+    fn do_location_set_cascading(&mut self, ctx: &egui::Context) {
         let num = window_manager::enum_monitors().len();
         self.last_num_display = num;
         self.log = format_log_with_config_path(window_manager::relocate_windows_cascading(
             &config::load_rules(CONFIG_FILE),
             num,
         ));
+        self.move_self_to_origin_bottom_left(ctx);
     }
 
     fn do_list_windows(&mut self) {
@@ -156,8 +159,7 @@ impl eframe::App for App {
         // スクリーン数変化の監視
         let cur_num = window_manager::enum_monitors().len();
         if cur_num != self.last_num_display && cur_num > 0 {
-            self.do_location_set();
-            self.move_self_to_primary_bottom_left(ctx);
+            self.do_location_set(ctx);
         }
 
         // 電源イベント受信チェック (モニターON → 2秒後に再配置)
@@ -167,8 +169,7 @@ impl eframe::App for App {
         if let Some(pending) = self.pending_relocate {
             if pending.elapsed() >= Duration::from_secs(2) {
                 self.pending_relocate = None;
-                self.do_location_set();
-                self.move_self_to_primary_bottom_left(ctx);
+                self.do_location_set(ctx);
             }
         }
 
@@ -221,10 +222,10 @@ impl eframe::App for App {
             // ボタン類はテキストボックスの下
             ui.horizontal(|ui| {
                 if ui.button("配置適用").clicked() {
-                    self.do_location_set();
+                    self.do_location_set(ctx);
                 }
                 if ui.button("階段配置").clicked() {
-                    self.do_location_set_cascading();
+                    self.do_location_set_cascading(ctx);
                 }
                 if ui.button("１画面配置").clicked() {
                     self.last_num_display = 1;
@@ -232,6 +233,7 @@ impl eframe::App for App {
                         &config::load_rules(CONFIG_FILE),
                         1,
                     ));
+                    self.move_self_to_origin_bottom_left(ctx);
                 }
                 if ui.button("ウィンドウ一覧").clicked() {
                     self.do_list_windows();

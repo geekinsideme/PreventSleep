@@ -107,21 +107,35 @@ pub fn enum_windows_list() -> Vec<WindowInfo> {
     windows
 }
 
+pub fn preventsleep_window_origin_bottom_left_position() -> (f32, f32) {
+    let monitors = enum_monitors();
+    let origin_monitor = monitor_with_origin_top_left(&monitors).unwrap_or(MonitorRect {
+        left: 0,
+        top: 0,
+        right: 1920,
+        bottom: 1080,
+    });
+
+    let window_height = 190.0_f32;
+    const NON_CLIENT_HEIGHT: f32 = 32.0;
+    let x = origin_monitor.left as f32;
+    let y = ((origin_monitor.bottom as f32) - (window_height + NON_CLIENT_HEIGHT))
+        .max(origin_monitor.top as f32);
+
+    (x, y)
+}
+
 pub fn relocate_preventsleep_window_to_origin_bottom_left() {
     let monitors = enum_monitors();
-    let Some(target) = monitor_with_origin_top_left(&monitors) else {
+    let Some(target_monitor) = monitor_with_origin_top_left(&monitors) else {
         return;
     };
 
-    const APP_WINDOW_HEIGHT: i32 = 190;
-    const APP_NON_CLIENT_HEIGHT: i32 = 32;
-    let target_x = target.left;
-    let target_y = (target.bottom - (APP_WINDOW_HEIGHT + APP_NON_CLIENT_HEIGHT)).max(target.top);
-
     #[derive(Copy, Clone)]
     struct RelocateTarget {
-        x: i32,
-        y: i32,
+        left: i32,
+        top: i32,
+        bottom: i32,
     }
 
     unsafe extern "system" fn enum_preventsleep_windows_proc(hwnd: HWND, lparam: LPARAM) -> BOOL {
@@ -146,11 +160,16 @@ pub fn relocate_preventsleep_window_to_origin_bottom_left() {
         }
 
         let target = *(lparam.0 as *const RelocateTarget);
+        let mut rect = RECT::default();
+        let _ = GetWindowRect(hwnd, &mut rect);
+        let window_height = (rect.bottom - rect.top).max(1);
+        let target_y = (target.bottom - window_height).max(target.top);
+
         let _ = SetWindowPos(
             hwnd,
             Some(HWND_NOTOPMOST),
-            target.x,
-            target.y,
+            target.left,
+            target_y,
             0,
             0,
             SWP_SHOWWINDOW | SWP_NOZORDER | SWP_NOSIZE,
@@ -160,8 +179,9 @@ pub fn relocate_preventsleep_window_to_origin_bottom_left() {
     }
 
     let target = RelocateTarget {
-        x: target_x,
-        y: target_y,
+        left: target_monitor.left,
+        top: target_monitor.top,
+        bottom: target_monitor.bottom,
     };
     unsafe {
         let _ = EnumWindows(

@@ -38,25 +38,13 @@ fn main() {
 
     // egui ウィンドウ設定
     // 左下に配置するための初期位置を計算
-    let monitors = window_manager::enum_monitors();
-    let origin_monitor = window_manager::monitor_with_origin_top_left(&monitors).unwrap_or(window_manager::MonitorRect {
-        left: 0,
-        top: 0,
-        right: 1920,
-        bottom: 1080,
-    });
-
     let win_width = 460.0_f32;
     let win_height = 190.0_f32;
-    // inner_size だけで配置するとタイトルバー/枠分だけ下に食い込むため補正する
-    const NON_CLIENT_HEIGHT: f32 = 32.0;
-    let init_x = origin_monitor.left as f32;
-    let init_y = ((origin_monitor.bottom as f32) - (win_height + NON_CLIENT_HEIGHT))
-        .max(origin_monitor.top as f32);
+    let (init_x, init_y) = window_manager::preventsleep_window_origin_bottom_left_position();
 
     let native_options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
-            .with_title("PreventSleep v2.1.5")
+            .with_title("PreventSleep v2.1.6")
             .with_inner_size([win_width, win_height])
             .with_min_inner_size([win_width, win_height])
             .with_max_inner_size([win_width, win_height])

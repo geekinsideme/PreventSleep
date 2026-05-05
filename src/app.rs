@@ -8,8 +8,6 @@ const CONFIG_FILE: &str = "PreventSleep.txt";
 const SLEEP_PREVENT_INTERVAL: Duration = Duration::from_secs(30);
 const LOG_BOX_WIDTH: f32 = 430.0;
 const LOG_BOX_HEIGHT: f32 = 95.0;
-const APP_WINDOW_HEIGHT: f32 = 190.0;
-const APP_NON_CLIENT_HEIGHT: f32 = 32.0;
 
 pub struct App {
     prevent_sleep: bool,
@@ -49,39 +47,30 @@ impl App {
             &config::load_rules(CONFIG_FILE),
             num,
         ));
-        app.move_self_to_origin_bottom_left(&cc.egui_ctx);
 
         app
     }
 
-    fn do_location_set(&mut self, ctx: &egui::Context) {
+    fn do_location_set(&mut self, _ctx: &egui::Context) {
         let num = window_manager::enum_monitors().len();
         self.last_num_display = num;
         self.log = format_log_with_config_path(window_manager::relocate_windows(
             &config::load_rules(CONFIG_FILE),
             num,
         ));
-        self.move_self_to_origin_bottom_left(ctx);
+        // 画面座標系の差異による画面外移動を避けるため、自ウィンドウは Win32 側で再配置する
+        window_manager::relocate_preventsleep_window_to_origin_bottom_left();
     }
 
-    fn move_self_to_origin_bottom_left(&self, ctx: &egui::Context) {
-        let monitors = window_manager::enum_monitors();
-        if let Some(origin_monitor) = window_manager::monitor_with_origin_top_left(&monitors) {
-            let x = origin_monitor.left as f32;
-            let y = ((origin_monitor.bottom as f32) - (APP_WINDOW_HEIGHT + APP_NON_CLIENT_HEIGHT))
-                .max(origin_monitor.top as f32);
-            ctx.send_viewport_cmd(egui::ViewportCommand::OuterPosition(egui::pos2(x, y)));
-        }
-    }
-
-    fn do_location_set_cascading(&mut self, ctx: &egui::Context) {
+    fn do_location_set_cascading(&mut self, _ctx: &egui::Context) {
         let num = window_manager::enum_monitors().len();
         self.last_num_display = num;
         self.log = format_log_with_config_path(window_manager::relocate_windows_cascading(
             &config::load_rules(CONFIG_FILE),
             num,
         ));
-        self.move_self_to_origin_bottom_left(ctx);
+        // 画面座標系の差異による画面外移動を避けるため、自ウィンドウは Win32 側で再配置する
+        window_manager::relocate_preventsleep_window_to_origin_bottom_left();
     }
 
     fn do_list_windows(&mut self) {
@@ -233,7 +222,8 @@ impl eframe::App for App {
                         &config::load_rules(CONFIG_FILE),
                         1,
                     ));
-                    self.move_self_to_origin_bottom_left(ctx);
+                    window_manager::relocate_preventsleep_window_to_origin_bottom_left();
+                    // self.move_self_to_origin_bottom_left(ctx);
                 }
                 if ui.button("ウィンドウ一覧").clicked() {
                     self.do_list_windows();

@@ -97,6 +97,7 @@ impl App {
             out
         };
     }
+
 }
 
 fn format_log_with_config_path(log_body: String) -> String {
@@ -136,14 +137,7 @@ fn setup_japanese_fonts(ctx: &egui::Context) {
 
 impl eframe::App for App {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
-        // --- タイマー処理 ---
-
-        // スリープ防止 (30秒ごと)
-        if self.prevent_sleep && self.last_prevent.elapsed() >= SLEEP_PREVENT_INTERVAL {
-            sleep_prevention::prevent_sleep();
-            sleep_prevention::send_mouse_move();
-            self.last_prevent = Instant::now();
-        }
+        // --- 状態監視処理 ---
 
         // スクリーン数変化の監視
         let cur_num = window_manager::enum_monitors().len();
@@ -161,9 +155,6 @@ impl eframe::App for App {
                 self.do_location_set(ctx);
             }
         }
-
-        // 次の repaint をスケジュール (1秒ポーリング)
-        ctx.request_repaint_after(Duration::from_secs(1));
 
         // --- UI 描画 ---
         egui::CentralPanel::default().show(ctx, |ui| {
@@ -197,9 +188,13 @@ impl eframe::App for App {
 
             // テキストボックスの下にチェックボックス
             ui.horizontal(|ui| {
-                if ui.checkbox(&mut self.prevent_sleep, "スリープ防止").changed() {
+                let previous = self.prevent_sleep;
+                ui.checkbox(&mut self.prevent_sleep, "スリープ防止");
+
+                if self.prevent_sleep != previous {
                     if self.prevent_sleep {
                         sleep_prevention::prevent_sleep();
+                        self.last_prevent = Instant::now();
                     } else {
                         sleep_prevention::release_sleep_prevention();
                     }
@@ -229,13 +224,24 @@ impl eframe::App for App {
                     self.do_list_windows();
                 }
                 if ui.button("モニターOFF").clicked() {
-                    sleep_prevention::release_sleep_prevention();
                     self.prevent_sleep = false;
+                    sleep_prevention::release_sleep_prevention();
                     std::thread::spawn(|| {
                         window_manager::turn_off_monitor();
                     });
                 }
             });
         });
+
+        // --- タイマー処理 ---
+
+        // スリープ防止 (30秒ごと / 有効時のみ)
+        if self.prevent_sleep && self.last_prevent.elapsed() >= SLEEP_PREVENT_INTERVAL {
+            sleep_prevention::send_mouse_move();
+            self.last_prevent = Instant::now();
+        }
+
+        // 次の repaint をスケジュール (1秒ポーリング)
+        ctx.request_repaint_after(Duration::from_secs(1));
     }
 }

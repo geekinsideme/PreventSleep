@@ -33,6 +33,41 @@ impl MonitorRect {
     }
 }
 
+const WINDOW_MARGIN_LEFT: i32 = 3;
+const WINDOW_MARGIN_RIGHT: i32 = 3;
+const WINDOW_MARGIN_TOP: i32 = 5;
+const WINDOW_MARGIN_BOTTOM: i32 = 0;
+const CASCADE_OFFSET: i32 = 35;
+
+fn effective_monitor_area(m: &MonitorRect) -> MonitorRect {
+    let mut left = m.left + WINDOW_MARGIN_LEFT;
+    let mut top = m.top + WINDOW_MARGIN_TOP;
+    let mut right = m.right - WINDOW_MARGIN_RIGHT;
+    let mut bottom = m.bottom - WINDOW_MARGIN_BOTTOM;
+
+    if right <= left {
+        let center_x = m.left + (m.width() / 2);
+        left = center_x;
+        right = center_x + 1;
+    }
+    if bottom <= top {
+        let center_y = m.top + (m.height() / 2);
+        top = center_y;
+        bottom = center_y + 1;
+    }
+
+    MonitorRect {
+        left,
+        top,
+        right,
+        bottom,
+    }
+}
+
+fn monitor_key(m: &MonitorRect) -> (i32, i32, i32, i32) {
+    (m.left, m.top, m.right, m.bottom)
+}
+
 pub fn enum_monitors() -> Vec<MonitorRect> {
     let mut monitors: Vec<MonitorRect> = Vec::new();
     unsafe {
@@ -127,9 +162,12 @@ pub fn preventsleep_window_origin_bottom_left_position() -> (f32, f32) {
 
 pub fn relocate_preventsleep_window_to_origin_bottom_left() {
     let monitors = enum_monitors();
-    let Some(target_monitor) = monitor_with_origin_top_left(&monitors) else {
-        return;
-    };
+    let target_monitor = monitor_with_origin_top_left(&monitors).unwrap_or(MonitorRect {
+        left: 0,
+        top: 0,
+        right: 1920,
+        bottom: 1080,
+    });
 
     #[derive(Copy, Clone)]
     struct RelocateTarget {
@@ -302,7 +340,34 @@ pub fn relocate_windows_cascading(rules: &[Rule], num_display: usize) -> String 
 }
 
 fn relocate_windows_impl(rules: &[Rule], num_display: usize, cascade_unspecified: bool) -> String {
-    let monitors = enum_monitors();
+    let mut monitors = enum_monitors();
+    if monitors.is_empty() {
+        monitors.push(MonitorRect {
+            left: 0,
+            top: 0,
+            right: 1920,
+            bottom: 1080,
+        });
+    }
+
+    let origin = monitor_with_origin_top_left(&monitors).unwrap_or(MonitorRect {
+        left: 0,
+        top: 0,
+        right: 1920,
+        bottom: 1080,
+    });
+
+    let mut effective_by_monitor: std::collections::HashMap<(i32, i32, i32, i32), MonitorRect> =
+        std::collections::HashMap::new();
+    for m in &monitors {
+        effective_by_monitor.insert(monitor_key(m), effective_monitor_area(m));
+    }
+
+    let origin_effective = effective_by_monitor
+        .get(&monitor_key(&origin))
+        .cloned()
+        .unwrap_or_else(|| effective_monitor_area(&origin));
+
     let windows = enum_windows_list();
 
     let mut log = String::new();
@@ -318,18 +383,15 @@ fn relocate_windows_impl(rules: &[Rule], num_display: usize, cascade_unspecified
     }
     log.push_str("\r\n");
 
-    let primary = monitors.first().cloned().unwrap_or(MonitorRect {
-        left: 0,
-        top: 0,
-        right: 1920,
-        bottom: 1080,
-    });
-
-    const TITLE_HEIGHT: i32 = 25;
-    const CASCADE_OFFSET: i32 = 35;
-    let mut shift_x = 0i32;
-    let mut shift_y = 0i32;
-    let mut cascade_index = 0i32;
+    let mut cascade_cursor_by_monitor: std::collections::HashMap<(i32, i32, i32, i32), (i32, i32)> =
+        std::collections::HashMap::new();
+    for m in &monitors {
+        if let Some(effective) = effective_by_monitor.get(&monitor_key(m)) {
+            cascade_cursor_by_monitor
+                .entry(monitor_key(m))
+                .or_insert((effective.left, effective.top));
+        }
+    }
 
     for win in &windows {
         let old_left = win.rect.left;
@@ -364,42 +426,47 @@ fn relocate_windows_impl(rules: &[Rule], num_display: usize, cascade_unspecified
             }
         }
 
-        let should_cascade = cascade_unspecified && !is_specified;
+        let mut should_cascade = false;
 
         if !is_specified {
-            if should_cascade {
-                left = cascade_index * CASCADE_OFFSET;
-                top = cascade_index * CASCADE_OFFSET;
-                width = win.rect.right - win.rect.left;
-                height = win.rect.bottom - win.rect.top;
-                cascade_index += 1;
+            width = win.rect.right - win.rect.left;
+            height = win.rect.bottom - win.rect.top;
+
+            if cascade_unspecified {
+                should_cascade = true;
+
+                let assigned_monitor = find_monitor_for_pos(win.rect.left, win.rect.top, &monitors)
+                    .cloned()
+                    .unwrap_or_else(|| origin.clone());
+                let assigned_key = monitor_key(&assigned_monitor);
+                let (cursor_x, cursor_y) = cascade_cursor_by_monitor
+                    .get(&assigned_key)
+                    .copied()
+                    .unwrap_or((origin_effective.left, origin_effective.top));
+
+                left = cursor_x;
+                top = cursor_y;
+
+                cascade_cursor_by_monitor.insert(
+                    assigned_key,
+                    (cursor_x + CASCADE_OFFSET, cursor_y + CASCADE_OFFSET),
+                );
             } else {
                 left = win.rect.left;
                 top = win.rect.top;
-                width = win.rect.right - win.rect.left;
-                height = win.rect.bottom - win.rect.top;
             }
         }
 
         width = width.max(1);
         height = height.max(1);
 
-        let target = if let Some(m) = find_monitor_for_pos(left, top, &monitors) {
-            m.clone()
-        } else {
-            let m = primary.clone();
-            if !cascade_unspecified {
-                left = m.left + shift_x;
-                top = m.top + m.height() - TITLE_HEIGHT - shift_y;
-                shift_x += TITLE_HEIGHT;
-                shift_y += TITLE_HEIGHT;
-                if shift_x > m.width() / 2 {
-                    shift_x = 0;
-                    shift_y = 0;
-                }
-            }
-            m
-        };
+        let target_monitor = find_monitor_for_pos(left, top, &monitors)
+            .cloned()
+            .unwrap_or_else(|| origin.clone());
+        let target = effective_by_monitor
+            .get(&monitor_key(&target_monitor))
+            .cloned()
+            .unwrap_or_else(|| effective_monitor_area(&target_monitor));
 
         if left + width > target.right {
             left = target.right - width;

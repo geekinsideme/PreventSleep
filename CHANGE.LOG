@@ -1,0 +1,17 @@
+# CHANGE.LOG
+
+## 2.2.0 - 2026-05-10
+
+- バージョンを `2.2.0` に更新
+  - `Cargo.toml`
+  - `src/main.rs`（ウィンドウタイトル）
+  - `build.rs`（FileVersion / ProductVersion）
+  - `README.md`
+- ウィンドウ配置マージンを軸別に分割
+  - `WINDOW_MARGIN_LEFT = 3`（左）
+  - `WINDOW_MARGIN_RIGHT = 3`（右）
+  - `WINDOW_MARGIN_TOP = 5`（上）
+  - `WINDOW_MARGIN_BOTTOM = 0`（下）
+- 仕様書とドキュメントを実装に同期
+  - `spec_detail.md`
+  - `README.md`

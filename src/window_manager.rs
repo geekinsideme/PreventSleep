@@ -331,6 +331,33 @@ fn find_monitor_for_pos(left: i32, top: i32, monitors: &[MonitorRect]) -> Option
         .find(|m| m.left <= left && left < m.right && m.top <= top && top < m.bottom)
 }
 
+fn clamp_to_target_area(
+    mut left: i32,
+    mut top: i32,
+    mut width: i32,
+    mut height: i32,
+    target: &MonitorRect,
+) -> (i32, i32, i32, i32) {
+    if left + width > target.right {
+        left = target.right - width;
+    }
+    if top + height > target.bottom {
+        top = target.bottom - height;
+    }
+    if left < target.left {
+        width -= target.left - left;
+        left = target.left;
+    }
+    if top < target.top {
+        height -= target.top - top;
+        top = target.top;
+    }
+
+    width = width.max(1);
+    height = height.max(1);
+    (left, top, width, height)
+}
+
 pub fn relocate_windows(rules: &[Rule], num_display: usize) -> String {
     relocate_windows_impl(rules, num_display, false)
 }
@@ -468,22 +495,7 @@ fn relocate_windows_impl(rules: &[Rule], num_display: usize, cascade_unspecified
             .cloned()
             .unwrap_or_else(|| effective_monitor_area(&target_monitor));
 
-        if left + width > target.right {
-            left = target.right - width;
-        }
-        if top + height > target.bottom {
-            top = target.bottom - height;
-        }
-        if left < target.left {
-            width -= target.left - left;
-            left = target.left;
-        }
-        if top < target.top {
-            height -= target.top - top;
-            top = target.top;
-        }
-        width = width.max(1);
-        height = height.max(1);
+        (left, top, width, height) = clamp_to_target_area(left, top, width, height, &target);
 
         unsafe {
             let hwnd = HWND(win.hwnd as *mut _);
@@ -530,6 +542,50 @@ fn relocate_windows_impl(rules: &[Rule], num_display: usize, cascade_unspecified
                         height,
                         SWP_SHOWWINDOW | SWP_NOZORDER,
                     );
+                }
+
+                // 初回移動で実際の外形（DPIスケーリング/非クライアント領域など）が
+                // 変わるケースを吸収するため、実寸を再取得して同一処理内で再補正する。
+                let mut moved_rect = RECT::default();
+                let _ = GetWindowRect(hwnd, &mut moved_rect);
+                let moved_w = (moved_rect.right - moved_rect.left).max(1);
+                let moved_h = (moved_rect.bottom - moved_rect.top).max(1);
+
+                let moved_monitor = find_monitor_for_pos(moved_rect.left, moved_rect.top, &monitors)
+                    .cloned()
+                    .unwrap_or_else(|| origin.clone());
+                let moved_target = effective_by_monitor
+                    .get(&monitor_key(&moved_monitor))
+                    .cloned()
+                    .unwrap_or_else(|| effective_monitor_area(&moved_monitor));
+
+                let (fixed_left, fixed_top, fixed_w, fixed_h) = clamp_to_target_area(
+                    moved_rect.left,
+                    moved_rect.top,
+                    moved_w,
+                    moved_h,
+                    &moved_target,
+                );
+
+                if fixed_left != moved_rect.left
+                    || fixed_top != moved_rect.top
+                    || fixed_w != moved_w
+                    || fixed_h != moved_h
+                {
+                    let _ = SetWindowPos(
+                        hwnd,
+                        Some(HWND_NOTOPMOST),
+                        fixed_left,
+                        fixed_top,
+                        fixed_w,
+                        fixed_h,
+                        SWP_SHOWWINDOW | SWP_NOZORDER,
+                    );
+
+                    left = fixed_left;
+                    top = fixed_top;
+                    width = fixed_w;
+                    height = fixed_h;
                 }
             }
         }

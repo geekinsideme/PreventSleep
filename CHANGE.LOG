@@ -1,5 +1,16 @@
 # CHANGE.LOG
 
+## 2.0.1 - 2026-05-15
+
+- 配置適用で一部ウィンドウが初回押下時に右下へはみ出す問題を修正
+  - 初回移動後に実矩形を再取得し、同一処理内で再補正するよう改善
+  - `src/window_manager.rs`
+- バージョンを `2.0.1` に更新
+  - `Cargo.toml`
+  - `src/main.rs`（ウィンドウタイトル）
+  - `build.rs`（FileVersion / ProductVersion）
+  - `README.md`
+
 ## 2.2.0 - 2026-05-10
 
 - バージョンを `2.2.0` に更新

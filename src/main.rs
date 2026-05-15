@@ -5,6 +5,7 @@ mod config;
 mod power_monitor;
 mod sleep_prevention;
 mod window_manager;
+mod hotkey;
 
 use std::sync::mpsc;
 use window_manager::turn_off_monitor;
@@ -36,6 +37,23 @@ fn main() {
     let (tx, rx) = mpsc::channel::<()>();
     power_monitor::start_power_monitor(tx);
 
+    // グローバルホットキー監視スレッド起動
+    // Alt+Shift+Z: 配置適用 / Alt+Shift+X: 階段配置
+    hotkey::run_global_hotkeys(
+        || {
+            let rules = config::load_rules("PreventSleep.txt");
+            let num = window_manager::enum_monitors().len();
+            window_manager::relocate_windows(&rules, num);
+            window_manager::relocate_preventsleep_window_to_origin_bottom_left();
+        },
+        || {
+            let rules = config::load_rules("PreventSleep.txt");
+            let num = window_manager::enum_monitors().len();
+            window_manager::relocate_windows_cascading(&rules, num);
+            window_manager::relocate_preventsleep_window_to_origin_bottom_left();
+        },
+    );
+
     // egui ウィンドウ設定
     // 左下に配置するための初期位置を計算
     let win_width = 460.0_f32;
@@ -44,7 +62,7 @@ fn main() {
 
     let native_options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
-            .with_title("PreventSleep v2.0.1")
+            .with_title("PreventSleep v2.1.0")
             .with_inner_size([win_width, win_height])
             .with_min_inner_size([win_width, win_height])
             .with_max_inner_size([win_width, win_height])

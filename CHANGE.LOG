@@ -1,5 +1,12 @@
 # CHANGE.LOG
 
+## 2.3.3 - 2026-05-17
+
+- ホットキー検出方式を `WH_KEYBOARD_LL` から `GetAsyncKeyState` ポーリングへ変更
+  - `WH_KEYBOARD_LL` は PreventSleep 前面時にフック呼び出しが機能しない問題があったため
+  - 30ms 間隔でポーリングし、前面・背面を問わず確実に `Ctrl+Alt+Z/X` を検出
+  - 管理者権限不要、eframe のイベントループに依存しない独立スレッドで動作
+
 ## 2.3.2 - 2026-05-17
 
 - グローバルホットキーを `RegisterHotKey` から `WH_KEYBOARD_LL` フックへ移行

@@ -1,4 +1,4 @@
-use crate::{config, sleep_prevention, window_manager};
+use crate::{config, hotkey::HotkeyAction, sleep_prevention, window_manager};
 use eframe::egui;
 use std::sync::mpsc::Receiver;
 use std::time::{Duration, Instant};
@@ -15,6 +15,7 @@ pub struct App {
     last_prevent: Instant,
     last_num_display: usize,
     power_rx: Receiver<()>,
+    hotkey_rx: Receiver<HotkeyAction>,
     /// モニターON通知後に2秒遅延して再配置するためのタイムスタンプ
     pending_relocate: Option<Instant>,
 }
@@ -24,6 +25,7 @@ impl App {
         cc: &eframe::CreationContext<'_>,
         prevent_sleep: bool,
         power_rx: Receiver<()>,
+        hotkey_rx: Receiver<HotkeyAction>,
     ) -> Self {
         setup_japanese_fonts(&cc.egui_ctx);
 
@@ -33,6 +35,7 @@ impl App {
             last_prevent: Instant::now(),
             last_num_display: 0,
             power_rx,
+            hotkey_rx,
             pending_relocate: None,
         };
 
@@ -153,6 +156,26 @@ impl eframe::App for App {
             if pending.elapsed() >= Duration::from_secs(2) {
                 self.pending_relocate = None;
                 self.do_location_set(ctx);
+            }
+        }
+
+        // グローバルホットキーイベント受信
+        while let Ok(action) = self.hotkey_rx.try_recv() {
+            match action {
+                HotkeyAction::Apply => {
+                    self.do_location_set(ctx);
+                    self.log = format!(
+                        "[ショートカット] Ctrl+Alt+Z で配置適用を実行\r\n{}",
+                        self.log
+                    );
+                }
+                HotkeyAction::Cascade => {
+                    self.do_location_set_cascading(ctx);
+                    self.log = format!(
+                        "[ショートカット] Ctrl+Alt+X で階段配置を実行\r\n{}",
+                        self.log
+                    );
+                }
             }
         }
 

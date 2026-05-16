@@ -38,21 +38,9 @@ fn main() {
     power_monitor::start_power_monitor(tx);
 
     // グローバルホットキー監視スレッド起動
-    // Alt+Shift+Z: 配置適用 / Alt+Shift+X: 階段配置
-    hotkey::run_global_hotkeys(
-        || {
-            let rules = config::load_rules("PreventSleep.txt");
-            let num = window_manager::enum_monitors().len();
-            window_manager::relocate_windows(&rules, num);
-            window_manager::relocate_preventsleep_window_to_origin_bottom_left();
-        },
-        || {
-            let rules = config::load_rules("PreventSleep.txt");
-            let num = window_manager::enum_monitors().len();
-            window_manager::relocate_windows_cascading(&rules, num);
-            window_manager::relocate_preventsleep_window_to_origin_bottom_left();
-        },
-    );
+    // Ctrl+Alt+Z: 配置適用 / Ctrl+Alt+X: 階段配置
+    let (hotkey_tx, hotkey_rx) = mpsc::channel::<hotkey::HotkeyAction>();
+    hotkey::run_global_hotkeys(hotkey_tx);
 
     // egui ウィンドウ設定
     // 左下に配置するための初期位置を計算
@@ -62,7 +50,7 @@ fn main() {
 
     let native_options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
-            .with_title("PreventSleep v2.3.0")
+            .with_title("PreventSleep v2.3.1")
             .with_inner_size([win_width, win_height])
             .with_min_inner_size([win_width, win_height])
             .with_max_inner_size([win_width, win_height])
@@ -75,7 +63,7 @@ fn main() {
     let _ = eframe::run_native(
         "PreventSleep",
         native_options,
-        Box::new(move |cc| Ok(Box::new(app::App::new(cc, prevent_sleep, rx)))),
+        Box::new(move |cc| Ok(Box::new(app::App::new(cc, prevent_sleep, rx, hotkey_rx)))),
     );
 }
 

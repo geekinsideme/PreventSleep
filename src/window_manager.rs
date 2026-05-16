@@ -408,7 +408,6 @@ fn relocate_windows_impl(rules: &[Rule], num_display: usize, cascade_unspecified
             m.height()
         ));
     }
-    log.push_str("\r\n");
 
     let mut cascade_cursor_by_monitor: std::collections::HashMap<(i32, i32, i32, i32), (i32, i32)> =
         std::collections::HashMap::new();

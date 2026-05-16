@@ -1,4 +1,4 @@
-use crate::{config, hotkey::HotkeyAction, sleep_prevention, window_manager};
+use crate::{config, hotkey::{self, HotkeyAction}, sleep_prevention, window_manager};
 use eframe::egui;
 use std::sync::mpsc::Receiver;
 use std::time::{Duration, Instant};
@@ -28,6 +28,9 @@ impl App {
         hotkey_rx: Receiver<HotkeyAction>,
     ) -> Self {
         setup_japanese_fonts(&cc.egui_ctx);
+
+        // ホットキー発火時に即 repaint するため Context を共有
+        hotkey::set_egui_context(cc.egui_ctx.clone());
 
         let mut app = Self {
             prevent_sleep,

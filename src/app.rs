@@ -238,13 +238,13 @@ impl eframe::App for App {
                     self.do_location_set_cascading(ctx);
                 }
                 if ui.button("１画面配置").clicked() {
-                    self.last_num_display = 1;
-                    self.log = format_log_with_config_path(window_manager::relocate_windows(
+                    // last_num_display は実際のモニタ数を維持する。
+                    // ここで 1 に書き換えるとモニタ数変化監視ロジックが誤発火し、
+                    // 直後に do_location_set（通常の配置適用）が呼ばれてしまう。
+                    self.log = format_log_with_config_path(window_manager::relocate_windows_single_screen(
                         &config::load_rules(CONFIG_FILE),
-                        1,
                     ));
                     window_manager::relocate_preventsleep_window_to_origin_bottom_left();
-                    // self.move_self_to_origin_bottom_left(ctx);
                 }
                 if ui.button("ウィンドウ一覧").clicked() {
                     self.do_list_windows();

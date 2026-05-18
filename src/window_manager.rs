@@ -359,15 +359,32 @@ fn clamp_to_target_area(
 }
 
 pub fn relocate_windows(rules: &[Rule], num_display: usize) -> String {
-    relocate_windows_impl(rules, num_display, false)
+    relocate_windows_impl(rules, num_display, false, None)
 }
 
 pub fn relocate_windows_cascading(rules: &[Rule], num_display: usize) -> String {
-    relocate_windows_impl(rules, num_display, true)
+    relocate_windows_impl(rules, num_display, true, None)
 }
 
-fn relocate_windows_impl(rules: &[Rule], num_display: usize, cascade_unspecified: bool) -> String {
-    let mut monitors = enum_monitors();
+/// 原点モニタのみが存在すると仮定して配置を行う（num_display は 1 固定）
+pub fn relocate_windows_single_screen(rules: &[Rule]) -> String {
+    let all_monitors = enum_monitors();
+    let origin = monitor_with_origin_top_left(&all_monitors).unwrap_or(MonitorRect {
+        left: 0,
+        top: 0,
+        right: 1920,
+        bottom: 1080,
+    });
+    relocate_windows_impl(rules, 1, false, Some(vec![origin]))
+}
+
+fn relocate_windows_impl(
+    rules: &[Rule],
+    num_display: usize,
+    cascade_unspecified: bool,
+    monitors_override: Option<Vec<MonitorRect>>,
+) -> String {
+    let mut monitors = monitors_override.unwrap_or_else(enum_monitors);
     if monitors.is_empty() {
         monitors.push(MonitorRect {
             left: 0,

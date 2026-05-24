@@ -1,13 +1,43 @@
 /// PreventSleep.txt の1行分のルール
 #[derive(Debug, Clone)]
+pub enum XSpec {
+    Coord(i32),
+    MonitorIndex(usize), // 1始まり。@1 が原点モニタ
+}
+
+#[derive(Debug, Clone)]
+pub enum SizeSpec {
+    Pixels(i32),
+    Fill, // "*"
+}
+
+#[derive(Debug, Clone)]
 pub struct Rule {
     pub title_regex: String,
     pub class_regex: String,
-    pub x: i32,
+    pub x: XSpec,
     pub y: i32,
-    pub w: i32,
-    pub h: i32,
+    pub w: SizeSpec,
+    pub h: SizeSpec,
     pub displays: String, // 例: "12345" → 1〜5画面すべてで有効
+}
+
+fn parse_x_spec(s: &str) -> XSpec {
+    let trimmed = s.trim();
+    if let Some(rest) = trimmed.strip_prefix('@') {
+        if let Ok(n) = rest.trim().parse::<usize>() {
+            return XSpec::MonitorIndex(n.max(1));
+        }
+    }
+    XSpec::Coord(trimmed.parse::<i32>().unwrap_or(0))
+}
+
+fn parse_size_spec(s: &str, default_px: i32) -> SizeSpec {
+    let trimmed = s.trim();
+    if trimmed == "*" {
+        return SizeSpec::Fill;
+    }
+    SizeSpec::Pixels(trimmed.parse::<i32>().unwrap_or(default_px))
 }
 
 /// PreventSleep.txt を読み込んでルールのリストを返す。
@@ -69,10 +99,10 @@ pub fn load_rules(path: &str) -> Vec<Rule> {
             continue;
         }
 
-        let x = rec.get(2).unwrap_or("0").trim().parse::<i32>().unwrap_or(0);
+        let x = parse_x_spec(rec.get(2).unwrap_or("0"));
         let y = rec.get(3).unwrap_or("0").trim().parse::<i32>().unwrap_or(0);
-        let w = rec.get(4).unwrap_or("100").trim().parse::<i32>().unwrap_or(100);
-        let h = rec.get(5).unwrap_or("100").trim().parse::<i32>().unwrap_or(100);
+        let w = parse_size_spec(rec.get(4).unwrap_or("100"), 100);
+        let h = parse_size_spec(rec.get(5).unwrap_or("100"), 100);
         let displays = rec
             .get(6)
             .map(|s| s.trim())

@@ -28,6 +28,11 @@ struct PowerBroadcastSetting {
     data: u8,
 }
 
+struct PowerMonitorState {
+    sender: Sender<()>,
+    last_monitor_on: Option<bool>,
+}
+
 /// 別スレッドで隠し Win32 ウィンドウを生成し、モニター電源ON イベントを監視する。
 /// モニター電源ON 検出時に sender へ () を送信する。
 pub fn start_power_monitor(sender: Sender<()>) {
@@ -74,12 +79,15 @@ pub fn start_power_monitor(sender: Sender<()>) {
             }
             let hwnd = hwnd.unwrap();
 
-            // sender をウィンドウのユーザーデータに保存
-            let boxed_sender = Box::new(sender);
+            // 監視状態をウィンドウのユーザーデータに保存
+            let boxed_state = Box::new(PowerMonitorState {
+                sender,
+                last_monitor_on: None,
+            });
             windows::Win32::UI::WindowsAndMessaging::SetWindowLongPtrW(
                 hwnd,
                 windows::Win32::UI::WindowsAndMessaging::GWLP_USERDATA,
-                Box::into_raw(boxed_sender) as isize,
+                Box::into_raw(boxed_state) as isize,
             );
 
             // 電源設定通知を登録
@@ -111,15 +119,23 @@ unsafe extern "system" fn power_wnd_proc(
 ) -> LRESULT {
     if msg == WM_POWERBROADCAST && wparam.0 == PBT_POWERSETTINGCHANGE {
         let setting = &*(lparam.0 as *const PowerBroadcastSetting);
-        if setting.power_setting == GUID_MONITOR_POWER_ON && setting.data != 0 {
-            // モニター ON
+        if setting.power_setting == GUID_MONITOR_POWER_ON {
             let ptr = windows::Win32::UI::WindowsAndMessaging::GetWindowLongPtrW(
                 hwnd,
                 windows::Win32::UI::WindowsAndMessaging::GWLP_USERDATA,
             );
             if ptr != 0 {
-                let sender = &*(ptr as *const std::sync::mpsc::Sender<()>);
-                let _ = sender.send(());
+                let state = &mut *(ptr as *mut PowerMonitorState);
+                let is_on = setting.data != 0;
+
+                // 初回通知は現状態のスナップショットとして扱い、
+                // 実際の OFF -> ON 遷移時のみ再配置トリガーを送る。
+                let should_notify = matches!(state.last_monitor_on, Some(false)) && is_on;
+                state.last_monitor_on = Some(is_on);
+
+                if should_notify {
+                    let _ = state.sender.send(());
+                }
             }
         }
     }

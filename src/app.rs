@@ -9,6 +9,23 @@ const SLEEP_PREVENT_INTERVAL: Duration = Duration::from_secs(30);
 const LOG_BOX_WIDTH: f32 = 430.0;
 const LOG_BOX_HEIGHT: f32 = 95.0;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum RelocateMode {
+    Normal,
+    Cascade,
+    SingleScreen,
+}
+
+impl RelocateMode {
+    fn as_label(&self) -> &'static str {
+        match self {
+            RelocateMode::Normal => "通常配置",
+            RelocateMode::Cascade => "階段配置",
+            RelocateMode::SingleScreen => "1画面配置",
+        }
+    }
+}
+
 pub struct App {
     prevent_sleep: bool,
     log: String,
@@ -18,6 +35,7 @@ pub struct App {
     hotkey_rx: Receiver<HotkeyAction>,
     /// モニターON通知後に2秒遅延して再配置するためのタイムスタンプ
     pending_relocate: Option<Instant>,
+    relocate_mode: RelocateMode,
 }
 
 impl App {
@@ -40,6 +58,7 @@ impl App {
             power_rx,
             hotkey_rx,
             pending_relocate: None,
+            relocate_mode: RelocateMode::Normal,
         };
 
         if app.prevent_sleep {
@@ -57,26 +76,68 @@ impl App {
         app
     }
 
-    fn do_location_set(&mut self, _ctx: &egui::Context) {
+    fn build_relocation_log_with_mode(&mut self, mode: RelocateMode) -> String {
         let num = window_manager::enum_monitors().len();
         self.last_num_display = num;
-        self.log = format_log_with_config_path(window_manager::relocate_windows(
-            &config::load_rules(CONFIG_FILE),
-            num,
-        ));
+        let rules = config::load_rules(CONFIG_FILE);
+
+        let relocation_log = match mode {
+            RelocateMode::Normal => {
+                format_log_with_config_path(window_manager::relocate_windows(&rules, num))
+            }
+            RelocateMode::Cascade => format_log_with_config_path(
+                window_manager::relocate_windows_cascading(&rules, num),
+            ),
+            RelocateMode::SingleScreen => {
+                format_log_with_config_path(window_manager::relocate_windows_single_screen(&rules))
+            }
+        };
+
         // 画面座標系の差異による画面外移動を避けるため、自ウィンドウは Win32 側で再配置する
         window_manager::relocate_preventsleep_window_to_origin_bottom_left();
+
+        relocation_log
+    }
+
+    fn apply_relocation_with_mode(&mut self, mode: RelocateMode) {
+        self.log = self.build_relocation_log_with_mode(mode);
+    }
+
+    fn append_auto_relocation_log(&mut self, trigger: &str, prev_num_display: usize) {
+        let mode = self.relocate_mode;
+        let relocation_log = self.build_relocation_log_with_mode(mode);
+        let new_num_display = self.last_num_display;
+
+        let mut appended = String::new();
+        appended.push_str(&format!(
+            "[自動再配置] trigger={}, mode={}, displays {} -> {}\r\n",
+            trigger,
+            mode.as_label(),
+            prev_num_display,
+            new_num_display,
+        ));
+        appended.push_str(&relocation_log);
+
+        if self.log.trim().is_empty() {
+            self.log = appended;
+        } else {
+            self.log = format!("{}\r\n\r\n{}", self.log, appended);
+        }
+    }
+
+    fn do_location_set(&mut self, _ctx: &egui::Context) {
+        self.relocate_mode = RelocateMode::Normal;
+        self.apply_relocation_with_mode(self.relocate_mode);
     }
 
     fn do_location_set_cascading(&mut self, _ctx: &egui::Context) {
-        let num = window_manager::enum_monitors().len();
-        self.last_num_display = num;
-        self.log = format_log_with_config_path(window_manager::relocate_windows_cascading(
-            &config::load_rules(CONFIG_FILE),
-            num,
-        ));
-        // 画面座標系の差異による画面外移動を避けるため、自ウィンドウは Win32 側で再配置する
-        window_manager::relocate_preventsleep_window_to_origin_bottom_left();
+        self.relocate_mode = RelocateMode::Cascade;
+        self.apply_relocation_with_mode(self.relocate_mode);
+    }
+
+    fn do_location_set_single_screen(&mut self, _ctx: &egui::Context) {
+        self.relocate_mode = RelocateMode::SingleScreen;
+        self.apply_relocation_with_mode(self.relocate_mode);
     }
 
     fn do_list_windows(&mut self) {
@@ -148,7 +209,8 @@ impl eframe::App for App {
         // スクリーン数変化の監視
         let cur_num = window_manager::enum_monitors().len();
         if cur_num != self.last_num_display && cur_num > 0 {
-            self.do_location_set(ctx);
+            let prev_num_display = self.last_num_display;
+            self.append_auto_relocation_log("monitor_count_changed", prev_num_display);
         }
 
         // 電源イベント受信チェック (モニターON → 2秒後に再配置)
@@ -158,7 +220,8 @@ impl eframe::App for App {
         if let Some(pending) = self.pending_relocate {
             if pending.elapsed() >= Duration::from_secs(2) {
                 self.pending_relocate = None;
-                self.do_location_set(ctx);
+                let prev_num_display = self.last_num_display;
+                self.append_auto_relocation_log("monitor_power_on", prev_num_display);
             }
         }
 
@@ -238,13 +301,7 @@ impl eframe::App for App {
                     self.do_location_set_cascading(ctx);
                 }
                 if ui.button("１画面配置").clicked() {
-                    // last_num_display は実際のモニタ数を維持する。
-                    // ここで 1 に書き換えるとモニタ数変化監視ロジックが誤発火し、
-                    // 直後に do_location_set（通常の配置適用）が呼ばれてしまう。
-                    self.log = format_log_with_config_path(window_manager::relocate_windows_single_screen(
-                        &config::load_rules(CONFIG_FILE),
-                    ));
-                    window_manager::relocate_preventsleep_window_to_origin_bottom_left();
+                    self.do_location_set_single_screen(ctx);
                 }
                 if ui.button("ウィンドウ一覧").clicked() {
                     self.do_list_windows();

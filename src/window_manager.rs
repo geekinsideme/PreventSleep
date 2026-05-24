@@ -1,4 +1,4 @@
-﻿use crate::config::Rule;
+﻿use crate::config::{Rule, SizeSpec, XSpec};
 use regex::Regex;
 use std::ffi::OsString;
 use std::os::windows::ffi::OsStringExt;
@@ -66,6 +66,25 @@ fn effective_monitor_area(m: &MonitorRect) -> MonitorRect {
 
 fn monitor_key(m: &MonitorRect) -> (i32, i32, i32, i32) {
     (m.left, m.top, m.right, m.bottom)
+}
+
+fn monitor_by_screen_index(monitors: &[MonitorRect], origin: &MonitorRect, index_1based: usize) -> MonitorRect {
+    let origin_key = monitor_key(origin);
+    let mut ordered: Vec<MonitorRect> = Vec::with_capacity(monitors.len());
+
+    ordered.push(origin.clone());
+    for m in monitors {
+        if monitor_key(m) != origin_key {
+            ordered.push(m.clone());
+        }
+    }
+
+    let fallback_idx = index_1based.max(1).saturating_sub(1);
+    let actual_idx = fallback_idx.min(ordered.len().saturating_sub(1));
+    ordered
+        .get(actual_idx)
+        .cloned()
+        .unwrap_or_else(|| origin.clone())
 }
 
 pub fn enum_monitors() -> Vec<MonitorRect> {
@@ -178,6 +197,13 @@ pub fn relocate_preventsleep_window_to_origin_bottom_left() {
 
     unsafe extern "system" fn enum_preventsleep_windows_proc(hwnd: HWND, lparam: LPARAM) -> BOOL {
         if !IsWindowVisible(hwnd).as_bool() {
+            return BOOL(1);
+        }
+
+        // PreventSleep 自身のプロセスのウィンドウのみ対象
+        let mut pid: u32 = 0;
+        let _ = GetWindowThreadProcessId(hwnd, Some(&mut pid));
+        if pid != GetCurrentProcessId() {
             return BOOL(1);
         }
 
@@ -461,17 +487,50 @@ fn relocate_windows_impl(
         let mut width = old_w;
         let mut height = old_h;
         let mut is_specified = false;
+        let mut forced_target_monitor: Option<MonitorRect> = None;
 
         for rule in rules {
             if is_window_matched(win, rule, num_display) {
-                left = rule.x;
+                forced_target_monitor = None;
+
+                left = match &rule.x {
+                    XSpec::Coord(x) => *x,
+                    XSpec::MonitorIndex(screen_idx) => {
+                        let selected = monitor_by_screen_index(&monitors, &origin, *screen_idx);
+                        let selected_effective = effective_by_monitor
+                            .get(&monitor_key(&selected))
+                            .cloned()
+                            .unwrap_or_else(|| effective_monitor_area(&selected));
+                        forced_target_monitor = Some(selected);
+                        selected_effective.left
+                    }
+                };
                 top = rule.y;
-                width = rule.w;
-                height = rule.h;
-                target_left = rule.x;
+
+                let target_for_size = forced_target_monitor
+                    .clone()
+                    .or_else(|| find_monitor_for_pos(left, top, &monitors).cloned())
+                    .unwrap_or_else(|| origin.clone());
+                let target_for_size_effective = effective_by_monitor
+                    .get(&monitor_key(&target_for_size))
+                    .cloned()
+                    .unwrap_or_else(|| effective_monitor_area(&target_for_size));
+
+                width = match &rule.w {
+                    SizeSpec::Pixels(w) => *w,
+                    // "*" は左上座標を維持し、右端を有効表示領域右端へ合わせる
+                    SizeSpec::Fill => (target_for_size_effective.right - left).max(1),
+                };
+                height = match &rule.h {
+                    SizeSpec::Pixels(h) => *h,
+                    // "*" は左上座標を維持し、下端を有効表示領域下端へ合わせる
+                    SizeSpec::Fill => (target_for_size_effective.bottom - top).max(1),
+                };
+
+                target_left = left;
                 target_top = rule.y;
-                target_w = rule.w;
-                target_h = rule.h;
+                target_w = width;
+                target_h = height;
                 is_specified = true;
                 // 最後にマッチしたルールを適用するため break しない
             }
@@ -511,8 +570,9 @@ fn relocate_windows_impl(
         width = width.max(1);
         height = height.max(1);
 
-        let target_monitor = find_monitor_for_pos(left, top, &monitors)
-            .cloned()
+        let target_monitor = forced_target_monitor
+            .clone()
+            .or_else(|| find_monitor_for_pos(left, top, &monitors).cloned())
             .unwrap_or_else(|| origin.clone());
         let target = effective_by_monitor
             .get(&monitor_key(&target_monitor))
@@ -575,21 +635,45 @@ fn relocate_windows_impl(
                 let moved_w = (moved_rect.right - moved_rect.left).max(1);
                 let moved_h = (moved_rect.bottom - moved_rect.top).max(1);
 
-                let moved_monitor = find_monitor_for_pos(moved_rect.left, moved_rect.top, &monitors)
-                    .cloned()
-                    .unwrap_or_else(|| origin.clone());
-                let moved_target = effective_by_monitor
-                    .get(&monitor_key(&moved_monitor))
-                    .cloned()
-                    .unwrap_or_else(|| effective_monitor_area(&moved_monitor));
+                let (fixed_left, fixed_top, fixed_w, fixed_h) = if is_specified {
+                    // 明示ルールの2回目補正では、1回目で確定した左上を維持し、
+                    // 右端/下端がはみ出す場合のみサイズ側で調整する。
+                    let mut anchor_left = left.max(target.left);
+                    let mut anchor_top = top.max(target.top);
 
-                let (fixed_left, fixed_top, fixed_w, fixed_h) = clamp_to_target_area(
-                    moved_rect.left,
-                    moved_rect.top,
-                    moved_w,
-                    moved_h,
-                    &moved_target,
-                );
+                    if anchor_left >= target.right {
+                        anchor_left = target.right - 1;
+                    }
+                    if anchor_top >= target.bottom {
+                        anchor_top = target.bottom - 1;
+                    }
+
+                    let avail_w = (target.right - anchor_left).max(1);
+                    let avail_h = (target.bottom - anchor_top).max(1);
+
+                    (
+                        anchor_left,
+                        anchor_top,
+                        moved_w.min(avail_w).max(1),
+                        moved_h.min(avail_h).max(1),
+                    )
+                } else {
+                    let moved_monitor = find_monitor_for_pos(moved_rect.left, moved_rect.top, &monitors)
+                        .cloned()
+                        .unwrap_or_else(|| origin.clone());
+                    let moved_target = effective_by_monitor
+                        .get(&monitor_key(&moved_monitor))
+                        .cloned()
+                        .unwrap_or_else(|| effective_monitor_area(&moved_monitor));
+
+                    clamp_to_target_area(
+                        moved_rect.left,
+                        moved_rect.top,
+                        moved_w,
+                        moved_h,
+                        &moved_target,
+                    )
+                };
 
                 if fixed_left != moved_rect.left
                     || fixed_top != moved_rect.top

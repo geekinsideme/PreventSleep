@@ -1,0 +1,13 @@
+﻿"- Microsoft​ Edge$","Chrome_WidgetWin_1", -2552, 9, 2545, 1387
+"Send Log/Memo/Todo","Chrome_WidgetWin_1", 0, 1070, 617, 328
+"\- Obsidian ","Chrome_WidgetWin_1", 143, 5, 2260, 1387
+"\- Visual Studio Code","Chrome_WidgetWin_1", 73, 75, 2388, 1285
+
+###
+
+"PreventSleep\.txt \- PreventSleep \(ワークスペース\) \- Visual Studio Code","Chrome_WidgetWin_1", 73, 75, 2388, 1285
+"検索結果 \- Google ドライブ および他 8 ページ \- 個人 \- Microsoft​ Edge","Chrome_WidgetWin_1", -2552, 9, 2545, 1387
+"gemma4\.bat \- ショートカット","ConsoleWindowClass", -32000, -32000, 160, 28
+"Daily Notes \- obsidian \- Obsidian 1\.12\.7","Chrome_WidgetWin_1", 143, 5, 2260, 1387
+"Google ドライブ","ATL:00007FF77CE6EF38", -32000, -32000, 160, 28
+"ごみ箱 \- エクスプローラー","CabinetWClass", 38, 40, 1018, 570

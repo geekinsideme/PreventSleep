@@ -338,23 +338,31 @@ fn clamp_to_target_area(
     mut height: i32,
     target: &MonitorRect,
 ) -> (i32, i32, i32, i32) {
+    let target_w = (target.right - target.left).max(1);
+    let target_h = (target.bottom - target.top).max(1);
+
+    width = width.max(1).min(target_w);
+    height = height.max(1).min(target_h);
+
+    // まず位置を有効領域内に寄せる（この段階ではサイズは削らない）
+    if left < target.left {
+        left = target.left;
+    }
+    if top < target.top {
+        top = target.top;
+    }
+
+    // 右端/下端をはみ出す場合のみ、位置を戻して収める
     if left + width > target.right {
         left = target.right - width;
     }
     if top + height > target.bottom {
         top = target.bottom - height;
     }
-    if left < target.left {
-        width -= target.left - left;
-        left = target.left;
-    }
-    if top < target.top {
-        height -= target.top - top;
-        top = target.top;
-    }
 
-    width = width.max(1);
-    height = height.max(1);
+    // 念のため最終防衛
+    left = left.max(target.left);
+    top = top.max(target.top);
     (left, top, width, height)
 }
 

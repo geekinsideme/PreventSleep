@@ -1,5 +1,14 @@
 # CHANGE.LOG
 
+## 2.4.1 - 2026-05-25
+
+- バージョン表記を `v2.4.1` に統一
+  - `Cargo.toml`
+  - `src/main.rs`（ウィンドウタイトル）
+  - `build.rs`（FileVersion / ProductVersion）
+  - `README.md`
+  - `src/window_manager.rs`（PreventSleep ウィンドウ判定の厳密一致文字列）
+
 ## 2.3.4 - 2026-05-19
 
 - 「１画面配置」ボタンの挙動を修正

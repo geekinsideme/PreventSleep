@@ -1,4 +1,4 @@
-﻿use crate::config::Rule;
+﻿use crate::config::{Rule, SizeSpec, XSpec};
 use regex::Regex;
 use std::ffi::OsString;
 use std::os::windows::ffi::OsStringExt;
@@ -66,6 +66,25 @@ fn effective_monitor_area(m: &MonitorRect) -> MonitorRect {
 
 fn monitor_key(m: &MonitorRect) -> (i32, i32, i32, i32) {
     (m.left, m.top, m.right, m.bottom)
+}
+
+fn monitor_by_screen_index(monitors: &[MonitorRect], origin: &MonitorRect, index_1based: usize) -> MonitorRect {
+    let origin_key = monitor_key(origin);
+    let mut ordered: Vec<MonitorRect> = Vec::with_capacity(monitors.len());
+
+    ordered.push(origin.clone());
+    for m in monitors {
+        if monitor_key(m) != origin_key {
+            ordered.push(m.clone());
+        }
+    }
+
+    let requested = index_1based.max(1) - 1;
+    let idx = requested.min(ordered.len().saturating_sub(1));
+    ordered
+        .get(idx)
+        .cloned()
+        .unwrap_or_else(|| origin.clone())
 }
 
 pub fn enum_monitors() -> Vec<MonitorRect> {
@@ -181,6 +200,14 @@ pub fn relocate_preventsleep_window_to_origin_bottom_left() {
             return BOOL(1);
         }
 
+        // PreventSleep 自プロセスのウィンドウのみ対象にする。
+        // タイトル先頭一致だけだと VS Code 等を誤判定する可能性がある。
+        let mut pid: u32 = 0;
+        let _ = GetWindowThreadProcessId(hwnd, Some(&mut pid));
+        if pid != GetCurrentProcessId() {
+            return BOOL(1);
+        }
+
         let text_len = GetWindowTextLengthW(hwnd);
         if text_len <= 0 {
             return BOOL(1);
@@ -192,8 +219,10 @@ pub fn relocate_preventsleep_window_to_origin_bottom_left() {
             .to_string_lossy()
             .to_string();
 
-        // GUI モードの PreventSleep ウィンドウだけを対象にする
-        if !title.starts_with("PreventSleep") {
+        // GUI モードの PreventSleep メインウィンドウだけを対象にする。
+        // 以前の starts_with("PreventSleep") だと
+        // "PreventSleep.txt - ... - Visual Studio Code" のようなタイトルを誤判定しうる。
+        if !(title == "PreventSleep v2.4.1" || title.starts_with("PreventSleep v")) {
             return BOOL(1);
         }
 
@@ -461,17 +490,50 @@ fn relocate_windows_impl(
         let mut width = old_w;
         let mut height = old_h;
         let mut is_specified = false;
+        let mut forced_target_monitor: Option<MonitorRect> = None;
 
         for rule in rules {
             if is_window_matched(win, rule, num_display) {
-                left = rule.x;
+                forced_target_monitor = None;
+
+                left = match &rule.x {
+                    XSpec::Coord(x) => *x,
+                    XSpec::MonitorIndex(screen_idx) => {
+                        let selected = monitor_by_screen_index(&monitors, &origin, *screen_idx);
+                        let selected_effective = effective_by_monitor
+                            .get(&monitor_key(&selected))
+                            .cloned()
+                            .unwrap_or_else(|| effective_monitor_area(&selected));
+                        forced_target_monitor = Some(selected);
+                        selected_effective.left
+                    }
+                };
                 top = rule.y;
-                width = rule.w;
-                height = rule.h;
-                target_left = rule.x;
+
+                let target_for_size = forced_target_monitor
+                    .clone()
+                    .or_else(|| find_monitor_for_pos(left, top, &monitors).cloned())
+                    .unwrap_or_else(|| origin.clone());
+                let target_for_size_effective = effective_by_monitor
+                    .get(&monitor_key(&target_for_size))
+                    .cloned()
+                    .unwrap_or_else(|| effective_monitor_area(&target_for_size));
+
+                width = match &rule.w {
+                    SizeSpec::Pixels(w) => *w,
+                    // "*" は左上を維持しつつ右端を有効領域右端に合わせる
+                    SizeSpec::Fill => (target_for_size_effective.right - left).max(1),
+                };
+                height = match &rule.h {
+                    SizeSpec::Pixels(h) => *h,
+                    // "*" は左上を維持しつつ下端を有効領域下端に合わせる
+                    SizeSpec::Fill => (target_for_size_effective.bottom - top).max(1),
+                };
+
+                target_left = left;
                 target_top = rule.y;
-                target_w = rule.w;
-                target_h = rule.h;
+                target_w = width;
+                target_h = height;
                 is_specified = true;
                 // 最後にマッチしたルールを適用するため break しない
             }
@@ -511,8 +573,9 @@ fn relocate_windows_impl(
         width = width.max(1);
         height = height.max(1);
 
-        let target_monitor = find_monitor_for_pos(left, top, &monitors)
-            .cloned()
+        let target_monitor = forced_target_monitor
+            .clone()
+            .or_else(|| find_monitor_for_pos(left, top, &monitors).cloned())
             .unwrap_or_else(|| origin.clone());
         let target = effective_by_monitor
             .get(&monitor_key(&target_monitor))

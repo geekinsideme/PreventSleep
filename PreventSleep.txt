@@ -1,7 +1,7 @@
-﻿"Send Log/Memo/Todo","Chrome_WidgetWin_1", 0, 1070, 617, 328
-"- Microsoft​ Edge$","Chrome_WidgetWin_1", @2, 0, *, *
+﻿"- Microsoft​ Edge$","Chrome_WidgetWin_1", -2552, 9, 2545, 1387
+"Send Log/Memo/Todo","Chrome_WidgetWin_1", 0, 1070, 617, 328
 "\- Obsidian ","Chrome_WidgetWin_1", 143, 5, 2260, 1387
-"\- Visual Studio Code","Chrome_WidgetWin_1", 73, 75, *, *
+"\- Visual Studio Code","Chrome_WidgetWin_1", 73, 75, 2388, 1285
 
 ###
 

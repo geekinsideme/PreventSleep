@@ -68,16 +68,58 @@ fn monitor_key(m: &MonitorRect) -> (i32, i32, i32, i32) {
     (m.left, m.top, m.right, m.bottom)
 }
 
-fn monitor_by_screen_index(monitors: &[MonitorRect], origin: &MonitorRect, index_1based: usize) -> MonitorRect {
+fn ordered_monitors_for_screen_numbering(
+    monitors: &[MonitorRect],
+    origin: &MonitorRect,
+) -> Vec<MonitorRect> {
     let origin_key = monitor_key(origin);
-    let mut ordered: Vec<MonitorRect> = Vec::with_capacity(monitors.len());
+    let mut right_side: Vec<MonitorRect> = Vec::new();
+    let mut left_side: Vec<MonitorRect> = Vec::new();
+    let mut same_x_non_origin: Vec<MonitorRect> = Vec::new();
 
-    ordered.push(origin.clone());
     for m in monitors {
-        if monitor_key(m) != origin_key {
-            ordered.push(m.clone());
+        if monitor_key(m) == origin_key {
+            continue;
+        }
+
+        if m.left > 0 {
+            right_side.push(m.clone());
+        } else if m.left < 0 {
+            left_side.push(m.clone());
+        } else {
+            same_x_non_origin.push(m.clone());
         }
     }
+
+    let dist2 = |m: &MonitorRect| -> i64 {
+        let x = m.left as i64;
+        let y = m.top as i64;
+        x * x + y * y
+    };
+
+    let tie_key = |m: &MonitorRect| -> (i32, i32, i32, i32) {
+        (m.top.abs(), m.left.abs(), m.top, m.left)
+    };
+
+    right_side.sort_by_key(|m| (dist2(m), tie_key(m)));
+    left_side.sort_by_key(|m| (dist2(m), tie_key(m)));
+    same_x_non_origin.sort_by_key(|m| (dist2(m), tie_key(m)));
+
+    let mut ordered: Vec<MonitorRect> = Vec::with_capacity(monitors.len());
+    ordered.push(origin.clone());
+    ordered.extend(right_side);
+    ordered.extend(left_side);
+    ordered.extend(same_x_non_origin);
+
+    ordered
+}
+
+fn monitor_by_screen_index(
+    monitors: &[MonitorRect],
+    origin: &MonitorRect,
+    index_1based: usize,
+) -> MonitorRect {
+    let ordered = ordered_monitors_for_screen_numbering(monitors, origin);
 
     let requested = index_1based.max(1) - 1;
     let idx = requested.min(ordered.len().saturating_sub(1));
@@ -450,9 +492,10 @@ fn relocate_windows_impl(
         .unwrap_or_else(|| effective_monitor_area(&origin));
 
     let windows = enum_windows_list();
+    let ordered_monitors = ordered_monitors_for_screen_numbering(&monitors, &origin);
 
     let mut log = String::new();
-    for (i, m) in monitors.iter().enumerate() {
+    for (i, m) in ordered_monitors.iter().enumerate() {
         log.push_str(&format!(
             "# {}, {}, {}, {}, {}\r\n",
             i + 1,

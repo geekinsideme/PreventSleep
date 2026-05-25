@@ -33,6 +33,45 @@ impl MonitorRect {
     }
 }
 
+fn split_tall_portrait_monitor(m: &MonitorRect) -> Option<[MonitorRect; 2]> {
+    let width = m.width();
+    let height = m.height();
+
+    // 縦長かつ高さが十分に大きい場合は、上下2分割の仮想モニターとして扱う。
+    if height > width && height > 1500 {
+        let mid = m.top + (height / 2);
+        return Some([
+            MonitorRect {
+                left: m.left,
+                top: m.top,
+                right: m.right,
+                bottom: mid,
+            },
+            MonitorRect {
+                left: m.left,
+                top: mid,
+                right: m.right,
+                bottom: m.bottom,
+            },
+        ]);
+    }
+
+    None
+}
+
+fn expand_monitors_with_virtual_split(monitors: Vec<MonitorRect>) -> Vec<MonitorRect> {
+    let mut expanded: Vec<MonitorRect> = Vec::with_capacity(monitors.len());
+    for m in monitors {
+        if let Some([top_half, bottom_half]) = split_tall_portrait_monitor(&m) {
+            expanded.push(top_half);
+            expanded.push(bottom_half);
+        } else {
+            expanded.push(m);
+        }
+    }
+    expanded
+}
+
 const WINDOW_MARGIN_LEFT: i32 = 3;
 const WINDOW_MARGIN_RIGHT: i32 = 3;
 const WINDOW_MARGIN_TOP: i32 = 5;
@@ -139,7 +178,7 @@ pub fn enum_monitors() -> Vec<MonitorRect> {
             LPARAM(&mut monitors as *mut _ as isize),
         );
     }
-    monitors
+    expand_monitors_with_virtual_split(monitors)
 }
 
 pub fn monitor_with_origin_top_left(monitors: &[MonitorRect]) -> Option<MonitorRect> {

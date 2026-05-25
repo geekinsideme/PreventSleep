@@ -1,4 +1,4 @@
-﻿use crate::config::{Rule, SizeSpec, XSpec};
+﻿use crate::config::{CoordSpec, Rule, SizeSpec};
 use regex::Regex;
 use std::ffi::OsString;
 use std::os::windows::ffi::OsStringExt;
@@ -370,7 +370,7 @@ unsafe extern "system" fn enum_all_windows_proc(hwnd: HWND, lparam: LPARAM) -> B
 }
 
 fn is_window_matched(win: &WindowInfo, rule: &Rule, num_display: usize) -> bool {
-    if !rule.displays.contains(&num_display.to_string()) {
+    if !is_display_count_enabled(&rule.displays, num_display) {
         return false;
     }
     if !rule.title_regex.is_empty() {
@@ -394,6 +394,44 @@ fn is_window_matched(win: &WindowInfo, rule: &Rule, num_display: usize) -> bool 
         }
     }
     true
+}
+
+fn is_display_count_enabled(displays: &str, num_display: usize) -> bool {
+    let trimmed = displays.trim();
+    if trimmed.is_empty() {
+        return true;
+    }
+
+    // @N は「配置対象モニタ指定」であり、接続画面数条件には使わない
+    if trimmed.contains('@') {
+        return true;
+    }
+
+    if num_display < 10 {
+        if let Some(d) = char::from_digit(num_display as u32, 10) {
+            return trimmed.chars().any(|c| c == d);
+        }
+        return false;
+    }
+
+    let target = num_display.to_string();
+    trimmed
+        .split(|c: char| !c.is_ascii_digit())
+        .any(|token| !token.is_empty() && token == target)
+}
+
+fn parse_monitor_index_from_displays(displays: &str) -> Option<usize> {
+    let at = displays.find('@')?;
+    let digits: String = displays[at + 1..]
+        .chars()
+        .take_while(|c| c.is_ascii_digit())
+        .collect();
+
+    if digits.is_empty() {
+        return None;
+    }
+
+    digits.parse::<usize>().ok().map(|n| n.max(1))
 }
 
 fn find_monitor_for_pos(left: i32, top: i32, monitors: &[MonitorRect]) -> Option<&MonitorRect> {
@@ -435,6 +473,44 @@ fn clamp_to_target_area(
     left = left.max(target.left);
     top = top.max(target.top);
     (left, top, width, height)
+}
+
+fn resolve_size_spec(spec: &SizeSpec, available: i32) -> i32 {
+    let available = available.max(1);
+    match spec {
+        SizeSpec::Pixels(px) => *px,
+        SizeSpec::Fill => available,
+        SizeSpec::Percent(p) => ((available as f32) * *p).round() as i32,
+    }
+    .max(1)
+}
+
+fn resolve_coord_spec(
+    spec: &CoordSpec,
+    target_effective: &MonitorRect,
+    is_x_axis: bool,
+    pixel_is_relative_to_target: bool,
+) -> i32 {
+    match spec {
+        CoordSpec::Pixels(px) => {
+            if pixel_is_relative_to_target {
+                if is_x_axis {
+                    target_effective.left + *px
+                } else {
+                    target_effective.top + *px
+                }
+            } else {
+                *px
+            }
+        }
+        CoordSpec::Percent(p) => {
+            if is_x_axis {
+                target_effective.left + ((target_effective.width() as f32) * *p).round() as i32
+            } else {
+                target_effective.top + ((target_effective.height() as f32) * *p).round() as i32
+            }
+        }
+    }
 }
 
 pub fn relocate_windows(rules: &[Rule], num_display: usize) -> String {
@@ -537,44 +613,60 @@ fn relocate_windows_impl(
 
         for rule in rules {
             if is_window_matched(win, rule, num_display) {
-                forced_target_monitor = None;
+                let screen_idx = parse_monitor_index_from_displays(&rule.displays);
+                forced_target_monitor = screen_idx
+                    .map(|idx| monitor_by_screen_index(&monitors, &origin, idx));
 
-                left = match &rule.x {
-                    XSpec::Coord(x) => *x,
-                    XSpec::MonitorIndex(screen_idx) => {
-                        let selected = monitor_by_screen_index(&monitors, &origin, *screen_idx);
-                        let selected_effective = effective_by_monitor
-                            .get(&monitor_key(&selected))
+                let fallback_monitor_for_percent =
+                    find_monitor_for_pos(old_left, old_top, &monitors)
+                        .cloned()
+                        .unwrap_or_else(|| origin.clone());
+
+                let coord_reference_monitor = match (&forced_target_monitor, &rule.x, &rule.y) {
+                    (Some(selected), _, _) => selected.clone(),
+                    (None, CoordSpec::Pixels(xp), CoordSpec::Pixels(yp)) => {
+                        find_monitor_for_pos(*xp, *yp, &monitors)
                             .cloned()
-                            .unwrap_or_else(|| effective_monitor_area(&selected));
-                        forced_target_monitor = Some(selected);
-                        selected_effective.left
+                            .unwrap_or_else(|| fallback_monitor_for_percent.clone())
                     }
+                    _ => fallback_monitor_for_percent.clone(),
                 };
-                top = rule.y;
+
+                let coord_reference_effective = effective_by_monitor
+                    .get(&monitor_key(&coord_reference_monitor))
+                    .cloned()
+                    .unwrap_or_else(|| effective_monitor_area(&coord_reference_monitor));
+
+                let pixel_is_relative_to_target = forced_target_monitor.is_some();
+                left = resolve_coord_spec(
+                    &rule.x,
+                    &coord_reference_effective,
+                    true,
+                    pixel_is_relative_to_target,
+                );
+                top = resolve_coord_spec(
+                    &rule.y,
+                    &coord_reference_effective,
+                    false,
+                    pixel_is_relative_to_target,
+                );
 
                 let target_for_size = forced_target_monitor
                     .clone()
                     .or_else(|| find_monitor_for_pos(left, top, &monitors).cloned())
-                    .unwrap_or_else(|| origin.clone());
+                    .unwrap_or_else(|| coord_reference_monitor.clone());
                 let target_for_size_effective = effective_by_monitor
                     .get(&monitor_key(&target_for_size))
                     .cloned()
                     .unwrap_or_else(|| effective_monitor_area(&target_for_size));
 
-                width = match &rule.w {
-                    SizeSpec::Pixels(w) => *w,
-                    // "*" は左上を維持しつつ右端を有効領域右端に合わせる
-                    SizeSpec::Fill => (target_for_size_effective.right - left).max(1),
-                };
-                height = match &rule.h {
-                    SizeSpec::Pixels(h) => *h,
-                    // "*" は左上を維持しつつ下端を有効領域下端に合わせる
-                    SizeSpec::Fill => (target_for_size_effective.bottom - top).max(1),
-                };
+                let available_w = (target_for_size_effective.right - left).max(1);
+                let available_h = (target_for_size_effective.bottom - top).max(1);
+                width = resolve_size_spec(&rule.w, available_w);
+                height = resolve_size_spec(&rule.h, available_h);
 
                 target_left = left;
-                target_top = rule.y;
+                target_top = top;
                 target_w = width;
                 target_h = height;
                 is_specified = true;

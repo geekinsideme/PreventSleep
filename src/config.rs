@@ -1,41 +1,47 @@
 /// PreventSleep.txt の1行分のルール
 #[derive(Debug, Clone)]
-pub enum XSpec {
-    Coord(i32),
-    MonitorIndex(usize), // 1始まり。@1 が原点モニタ
+pub enum CoordSpec {
+    Pixels(i32),
+    Percent(f32), // "10%" など
 }
 
 #[derive(Debug, Clone)]
 pub enum SizeSpec {
     Pixels(i32),
     Fill, // "*"
+    Percent(f32), // "70%" など
 }
 
 #[derive(Debug, Clone)]
 pub struct Rule {
     pub title_regex: String,
     pub class_regex: String,
-    pub x: XSpec,
-    pub y: i32,
+    pub x: CoordSpec,
+    pub y: CoordSpec,
     pub w: SizeSpec,
     pub h: SizeSpec,
     pub displays: String, // 例: "12345" → 1〜5画面すべてで有効
 }
 
-fn parse_x_spec(s: &str) -> XSpec {
+fn parse_coord_spec(s: &str, default_px: i32) -> CoordSpec {
     let trimmed = s.trim();
-    if let Some(rest) = trimmed.strip_prefix('@') {
-        if let Ok(n) = rest.trim().parse::<usize>() {
-            return XSpec::MonitorIndex(n.max(1));
+    if let Some(rest) = trimmed.strip_suffix('%') {
+        if let Ok(p) = rest.trim().parse::<f32>() {
+            return CoordSpec::Percent((p / 100.0).max(0.0));
         }
     }
-    XSpec::Coord(trimmed.parse::<i32>().unwrap_or(0))
+    CoordSpec::Pixels(trimmed.parse::<i32>().unwrap_or(default_px))
 }
 
 fn parse_size_spec(s: &str, default_px: i32) -> SizeSpec {
     let trimmed = s.trim();
     if trimmed == "*" {
         return SizeSpec::Fill;
+    }
+    if let Some(rest) = trimmed.strip_suffix('%') {
+        if let Ok(p) = rest.trim().parse::<f32>() {
+            return SizeSpec::Percent((p / 100.0).max(0.0));
+        }
     }
     SizeSpec::Pixels(trimmed.parse::<i32>().unwrap_or(default_px))
 }
@@ -99,8 +105,8 @@ pub fn load_rules(path: &str) -> Vec<Rule> {
             continue;
         }
 
-        let x = parse_x_spec(rec.get(2).unwrap_or("0"));
-        let y = rec.get(3).unwrap_or("0").trim().parse::<i32>().unwrap_or(0);
+        let x = parse_coord_spec(rec.get(2).unwrap_or("0"), 0);
+        let y = parse_coord_spec(rec.get(3).unwrap_or("0"), 0);
         let w = parse_size_spec(rec.get(4).unwrap_or("100"), 100);
         let h = parse_size_spec(rec.get(5).unwrap_or("100"), 100);
         let displays = rec

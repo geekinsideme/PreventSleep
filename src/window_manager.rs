@@ -303,7 +303,7 @@ pub fn relocate_preventsleep_window_to_origin_bottom_left() {
         // GUI モードの PreventSleep メインウィンドウだけを対象にする。
         // 以前の starts_with("PreventSleep") だと
         // "PreventSleep.txt - ... - Visual Studio Code" のようなタイトルを誤判定しうる。
-        if !(title == "PreventSleep v2.4.1" || title.starts_with("PreventSleep v")) {
+        if !(title == "PreventSleep v2.5.0" || title.starts_with("PreventSleep v")) {
             return BOOL(1);
         }
 

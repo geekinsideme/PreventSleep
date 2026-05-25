@@ -5,6 +5,10 @@
 ### 1. 共通定義
 
 - **モニタ範囲** は Windows の作業領域（タスクバー等を除く領域）を用いる。
+- **仮想モニタ分割**: `height > width` かつ `height > 1500` を満たすモニタは、実装上、上下2つの仮想モニタに分割して扱う。
+  - 上側: `(left, top)-(right, top + height/2)`
+  - 下側: `(left, top + height/2)-(right, bottom)`
+  - 以降の `num_display`・画面番号付け（`@N`）・所属判定は、この分割後モニタ集合を基準とする。
 - **有効表示領域** は、モニタ範囲から固定マージンを引いた内側領域とする。
   - `WINDOW_MARGIN_LEFT = 3`（定数：左）
   - `WINDOW_MARGIN_RIGHT = 3`（定数：右）

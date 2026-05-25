@@ -1,5 +1,19 @@
 # CHANGE.LOG
 
+## 2.5.0 - 2026-05-25
+
+- 縦長高解像度モニタの仮想分割に対応
+  - `height > width` かつ `height > 1500` のモニタを、上下2画面として扱うよう変更
+  - 画面数判定・`@N` 画面指定・配置補正は分割後モニタ集合に対して適用
+- 仕様書と README を実装に同期
+  - `spec_detail.md` に仮想分割仕様を追記
+  - `README.md` のGUIボタン表記を現行UI（配置適用 / 階段配置 / １画面配置 / ウィンドウ一覧 / モニターOFF）に更新
+- バージョンを `v2.5.0` に更新
+  - `Cargo.toml`
+  - `src/main.rs`（ウィンドウタイトル）
+  - `build.rs`（FileVersion / ProductVersion）
+  - `src/window_manager.rs`（PreventSleep ウィンドウ判定の厳密一致文字列）
+
 ## 2.4.1 - 2026-05-25
 
 - バージョン表記を `v2.4.1` に統一

@@ -303,7 +303,7 @@ pub fn relocate_preventsleep_window_to_origin_bottom_left() {
         // GUI モードの PreventSleep メインウィンドウだけを対象にする。
         // 以前の starts_with("PreventSleep") だと
         // "PreventSleep.txt - ... - Visual Studio Code" のようなタイトルを誤判定しうる。
-        if !(title == "PreventSleep v2.5.0" || title.starts_with("PreventSleep v")) {
+        if !(title == "PreventSleep v2.5.1" || title.starts_with("PreventSleep v")) {
             return BOOL(1);
         }
 
@@ -531,6 +531,13 @@ fn resolve_coord_spec(
     pixel_is_relative_to_target: bool,
 ) -> i32 {
     match spec {
+        CoordSpec::Cascade => {
+            if is_x_axis {
+                target_effective.left
+            } else {
+                target_effective.top
+            }
+        }
         CoordSpec::Pixels(px) => {
             if pixel_is_relative_to_target {
                 if is_x_axis {
@@ -648,7 +655,9 @@ fn relocate_windows_impl(
         let mut width = old_w;
         let mut height = old_h;
         let mut is_specified = false;
+        let mut should_cascade = false;
         let mut forced_target_monitor: Option<MonitorRect> = None;
+        let mut cascade_target_monitor: Option<MonitorRect> = None;
 
         for rule in rules {
             if is_window_matched(win, rule, num_display) {
@@ -661,14 +670,23 @@ fn relocate_windows_impl(
                         .cloned()
                         .unwrap_or_else(|| origin.clone());
 
-                let coord_reference_monitor = match (&forced_target_monitor, &rule.x, &rule.y) {
-                    (Some(selected), _, _) => selected.clone(),
-                    (None, CoordSpec::Pixels(xp), CoordSpec::Pixels(yp)) => {
-                        find_monitor_for_pos(*xp, *yp, &monitors)
-                            .cloned()
-                            .unwrap_or_else(|| fallback_monitor_for_percent.clone())
+                let rule_requests_cascade = matches!(rule.x, CoordSpec::Cascade)
+                    || matches!(rule.y, CoordSpec::Cascade);
+
+                let coord_reference_monitor = if rule_requests_cascade {
+                    forced_target_monitor
+                        .clone()
+                        .unwrap_or_else(|| fallback_monitor_for_percent.clone())
+                } else {
+                    match (&forced_target_monitor, &rule.x, &rule.y) {
+                        (Some(selected), _, _) => selected.clone(),
+                        (None, CoordSpec::Pixels(xp), CoordSpec::Pixels(yp)) => {
+                            find_monitor_for_pos(*xp, *yp, &monitors)
+                                .cloned()
+                                .unwrap_or_else(|| fallback_monitor_for_percent.clone())
+                        }
+                        _ => fallback_monitor_for_percent.clone(),
                     }
-                    _ => fallback_monitor_for_percent.clone(),
                 };
 
                 let coord_reference_effective = effective_by_monitor
@@ -676,19 +694,34 @@ fn relocate_windows_impl(
                     .cloned()
                     .unwrap_or_else(|| effective_monitor_area(&coord_reference_monitor));
 
-                let pixel_is_relative_to_target = forced_target_monitor.is_some();
-                left = resolve_coord_spec(
-                    &rule.x,
-                    &coord_reference_effective,
-                    true,
-                    pixel_is_relative_to_target,
-                );
-                top = resolve_coord_spec(
-                    &rule.y,
-                    &coord_reference_effective,
-                    false,
-                    pixel_is_relative_to_target,
-                );
+                if rule_requests_cascade {
+                    let assigned_key = monitor_key(&coord_reference_monitor);
+                    let (cursor_x, cursor_y) = cascade_cursor_by_monitor
+                        .get(&assigned_key)
+                        .copied()
+                        .unwrap_or((coord_reference_effective.left, coord_reference_effective.top));
+
+                    left = cursor_x;
+                    top = cursor_y;
+                    should_cascade = true;
+                    cascade_target_monitor = Some(coord_reference_monitor.clone());
+                } else {
+                    let pixel_is_relative_to_target = forced_target_monitor.is_some();
+                    left = resolve_coord_spec(
+                        &rule.x,
+                        &coord_reference_effective,
+                        true,
+                        pixel_is_relative_to_target,
+                    );
+                    top = resolve_coord_spec(
+                        &rule.y,
+                        &coord_reference_effective,
+                        false,
+                        pixel_is_relative_to_target,
+                    );
+                    should_cascade = false;
+                    cascade_target_monitor = None;
+                }
 
                 let target_for_size = forced_target_monitor
                     .clone()
@@ -713,8 +746,6 @@ fn relocate_windows_impl(
             }
         }
 
-        let mut should_cascade = false;
-
         if !is_specified {
             width = win.rect.right - win.rect.left;
             height = win.rect.bottom - win.rect.top;
@@ -733,14 +764,20 @@ fn relocate_windows_impl(
 
                 left = cursor_x;
                 top = cursor_y;
-
-                cascade_cursor_by_monitor.insert(
-                    assigned_key,
-                    (cursor_x + CASCADE_OFFSET, cursor_y + CASCADE_OFFSET),
-                );
+                cascade_target_monitor = Some(assigned_monitor);
             } else {
                 left = win.rect.left;
                 top = win.rect.top;
+            }
+        }
+
+        if should_cascade {
+            if let Some(assigned_monitor) = cascade_target_monitor.clone() {
+                let assigned_key = monitor_key(&assigned_monitor);
+                cascade_cursor_by_monitor.insert(
+                    assigned_key,
+                    (left + CASCADE_OFFSET, top + CASCADE_OFFSET),
+                );
             }
         }
 

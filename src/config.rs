@@ -1,6 +1,7 @@
 /// PreventSleep.txt の1行分のルール
 #[derive(Debug, Clone)]
 pub enum CoordSpec {
+    Cascade, // "*" → 対象モニタで階段配置
     Pixels(i32),
     Percent(f32), // "10%" など
 }
@@ -25,6 +26,9 @@ pub struct Rule {
 
 fn parse_coord_spec(s: &str, default_px: i32) -> CoordSpec {
     let trimmed = s.trim();
+    if trimmed == "*" {
+        return CoordSpec::Cascade;
+    }
     if let Some(rest) = trimmed.strip_suffix('%') {
         if let Ok(p) = rest.trim().parse::<f32>() {
             return CoordSpec::Percent((p / 100.0).max(0.0));

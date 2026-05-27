@@ -1,5 +1,20 @@
 # CHANGE.LOG
 
+## 2.5.2 - 2026-05-28
+
+- 縦長モニタ分割の基準を絶対領域へ変更
+  - 分割座標は作業領域ベースではなく、タスクバーを含む絶対領域（`rcMonitor`）の中央を基準に決定
+  - `MonitorRect` に絶対位置・サイズ情報（`abs_left/top/right/bottom`）を追加
+- モニタ情報ログを拡張
+  - `# n, work=(...), abs=(...)` 形式で作業領域と絶対領域の両方を出力
+- ドキュメントを実装に同期
+  - `README.md` と `spec_detail.md` に絶対領域基準の分割仕様とログ仕様を追記
+- バージョンを `v2.5.2` に更新
+  - `Cargo.toml`
+  - `src/main.rs`（ウィンドウタイトル）
+  - `build.rs`（FileVersion / ProductVersion）
+  - `src/window_manager.rs`（PreventSleep ウィンドウ判定の厳密一致文字列）
+
 ## 2.5.1 - 2026-05-26
 
 - `PreventSleep.txt` の X/Y フィールドで `*` 指定に対応

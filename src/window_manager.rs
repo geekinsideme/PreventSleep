@@ -22,37 +22,97 @@ pub struct MonitorRect {
     pub top: i32,
     pub right: i32,
     pub bottom: i32,
+    pub abs_left: i32,
+    pub abs_top: i32,
+    pub abs_right: i32,
+    pub abs_bottom: i32,
 }
 
 impl MonitorRect {
+    pub fn from_bounds(left: i32, top: i32, right: i32, bottom: i32) -> Self {
+        Self {
+            left,
+            top,
+            right,
+            bottom,
+            abs_left: left,
+            abs_top: top,
+            abs_right: right,
+            abs_bottom: bottom,
+        }
+    }
+
+    pub fn from_work_and_absolute(
+        left: i32,
+        top: i32,
+        right: i32,
+        bottom: i32,
+        abs_left: i32,
+        abs_top: i32,
+        abs_right: i32,
+        abs_bottom: i32,
+    ) -> Self {
+        Self {
+            left,
+            top,
+            right,
+            bottom,
+            abs_left,
+            abs_top,
+            abs_right,
+            abs_bottom,
+        }
+    }
+
     pub fn width(&self) -> i32 {
         self.right - self.left
     }
     pub fn height(&self) -> i32 {
         self.bottom - self.top
     }
+    pub fn abs_width(&self) -> i32 {
+        self.abs_right - self.abs_left
+    }
+    pub fn abs_height(&self) -> i32 {
+        self.abs_bottom - self.abs_top
+    }
 }
 
 fn split_tall_portrait_monitor(m: &MonitorRect) -> Option<[MonitorRect; 2]> {
-    let width = m.width();
-    let height = m.height();
+    let abs_width = m.abs_width();
+    let abs_height = m.abs_height();
 
     // 縦長かつ高さが十分に大きい場合は、上下2分割の仮想モニターとして扱う。
-    if height > width && height > 1500 {
-        let mid = m.top + (height / 2);
+    // 分割基準はタスクバーを含む絶対モニタ領域（abs_*）で行う。
+    if abs_height > abs_width && abs_height > 1500 {
+        let abs_mid = m.abs_top + (abs_height / 2);
+        let split_work_y = if m.bottom - m.top >= 2 {
+            abs_mid.clamp(m.top + 1, m.bottom - 1)
+        } else {
+            m.top + 1
+        };
+
         return Some([
-            MonitorRect {
-                left: m.left,
-                top: m.top,
-                right: m.right,
-                bottom: mid,
-            },
-            MonitorRect {
-                left: m.left,
-                top: mid,
-                right: m.right,
-                bottom: m.bottom,
-            },
+            MonitorRect::from_work_and_absolute(
+                m.left,
+                m.top,
+                m.right,
+                split_work_y,
+                m.abs_left,
+                m.abs_top,
+                m.abs_right,
+                abs_mid,
+            ),
+            MonitorRect::from_work_and_absolute(
+                m.left,
+                split_work_y,
+                m.right,
+                m.bottom,
+                m.abs_left,
+                abs_mid,
+                m.abs_right,
+                m.abs_bottom,
+            ),
         ]);
     }
 
@@ -95,16 +155,29 @@ fn effective_monitor_area(m: &MonitorRect) -> MonitorRect {
         bottom = center_y + 1;
     }
 
-    MonitorRect {
+    MonitorRect::from_work_and_absolute(
         left,
         top,
         right,
         bottom,
-    }
+        m.abs_left,
+        m.abs_top,
+        m.abs_right,
+        m.abs_bottom,
+    )
 }
 
-fn monitor_key(m: &MonitorRect) -> (i32, i32, i32, i32) {
-    (m.left, m.top, m.right, m.bottom)
+fn monitor_key(m: &MonitorRect) -> (i32, i32, i32, i32, i32, i32, i32, i32) {
+    (
+        m.left,
+        m.top,
+        m.right,
+        m.bottom,
+        m.abs_left,
+        m.abs_top,
+        m.abs_right,
+        m.abs_bottom,
+    )
 }
 
 fn ordered_monitors_for_screen_numbering(
@@ -213,12 +286,17 @@ unsafe extern "system" fn monitor_enum_proc(
     };
     if GetMonitorInfoW(hmon, &mut info).as_bool() {
         let wa = info.rcWork;
-        monitors.push(MonitorRect {
-            left: wa.left,
-            top: wa.top,
-            right: wa.right,
-            bottom: wa.bottom,
-        });
+        let ma = info.rcMonitor;
+        monitors.push(MonitorRect::from_work_and_absolute(
+            wa.left,
+            wa.top,
+            wa.right,
+            wa.bottom,
+            ma.left,
+            ma.top,
+            ma.right,
+            ma.bottom,
+        ));
     }
     BOOL(1)
 }
@@ -244,12 +322,8 @@ pub fn enum_windows_list() -> Vec<WindowInfo> {
 
 pub fn preventsleep_window_origin_bottom_left_position() -> (f32, f32) {
     let monitors = enum_monitors();
-    let origin_monitor = monitor_with_origin_top_left(&monitors).unwrap_or(MonitorRect {
-        left: 0,
-        top: 0,
-        right: 1920,
-        bottom: 1080,
-    });
+    let origin_monitor = monitor_with_origin_top_left(&monitors)
+        .unwrap_or(MonitorRect::from_bounds(0, 0, 1920, 1080));
 
     let window_height = 190.0_f32;
     const NON_CLIENT_HEIGHT: f32 = 32.0;
@@ -262,12 +336,8 @@ pub fn preventsleep_window_origin_bottom_left_position() -> (f32, f32) {
 
 pub fn relocate_preventsleep_window_to_origin_bottom_left() {
     let monitors = enum_monitors();
-    let target_monitor = monitor_with_origin_top_left(&monitors).unwrap_or(MonitorRect {
-        left: 0,
-        top: 0,
-        right: 1920,
-        bottom: 1080,
-    });
+    let target_monitor = monitor_with_origin_top_left(&monitors)
+        .unwrap_or(MonitorRect::from_bounds(0, 0, 1920, 1080));
 
     #[derive(Copy, Clone)]
     struct RelocateTarget {
@@ -303,7 +373,7 @@ pub fn relocate_preventsleep_window_to_origin_bottom_left() {
         // GUI モードの PreventSleep メインウィンドウだけを対象にする。
         // 以前の starts_with("PreventSleep") だと
         // "PreventSleep.txt - ... - Visual Studio Code" のようなタイトルを誤判定しうる。
-        if !(title == "PreventSleep v2.5.1" || title.starts_with("PreventSleep v")) {
+        if !(title == "PreventSleep v2.5.2" || title.starts_with("PreventSleep v")) {
             return BOOL(1);
         }
 
@@ -397,12 +467,7 @@ unsafe extern "system" fn enum_all_windows_proc(hwnd: HWND, lparam: LPARAM) -> B
         hwnd: hwnd.0 as isize,
         title,
         class_name,
-        rect: MonitorRect {
-            left: rect.left,
-            top: rect.top,
-            right: rect.right,
-            bottom: rect.bottom,
-        },
+        rect: MonitorRect::from_bounds(rect.left, rect.top, rect.right, rect.bottom),
     });
 
     BOOL(1)
@@ -570,12 +635,8 @@ pub fn relocate_windows_cascading(rules: &[Rule], num_display: usize) -> String 
 /// 原点モニタのみが存在すると仮定して配置を行う（num_display は 1 固定）
 pub fn relocate_windows_single_screen(rules: &[Rule]) -> String {
     let all_monitors = enum_monitors();
-    let origin = monitor_with_origin_top_left(&all_monitors).unwrap_or(MonitorRect {
-        left: 0,
-        top: 0,
-        right: 1920,
-        bottom: 1080,
-    });
+    let origin = monitor_with_origin_top_left(&all_monitors)
+        .unwrap_or(MonitorRect::from_bounds(0, 0, 1920, 1080));
     relocate_windows_impl(rules, 1, false, Some(vec![origin]))
 }
 
@@ -587,23 +648,16 @@ fn relocate_windows_impl(
 ) -> String {
     let mut monitors = monitors_override.unwrap_or_else(enum_monitors);
     if monitors.is_empty() {
-        monitors.push(MonitorRect {
-            left: 0,
-            top: 0,
-            right: 1920,
-            bottom: 1080,
-        });
+        monitors.push(MonitorRect::from_bounds(0, 0, 1920, 1080));
     }
 
-    let origin = monitor_with_origin_top_left(&monitors).unwrap_or(MonitorRect {
-        left: 0,
-        top: 0,
-        right: 1920,
-        bottom: 1080,
-    });
+    let origin = monitor_with_origin_top_left(&monitors)
+        .unwrap_or(MonitorRect::from_bounds(0, 0, 1920, 1080));
 
-    let mut effective_by_monitor: std::collections::HashMap<(i32, i32, i32, i32), MonitorRect> =
-        std::collections::HashMap::new();
+    let mut effective_by_monitor: std::collections::HashMap<
+        (i32, i32, i32, i32, i32, i32, i32, i32),
+        MonitorRect,
+    > = std::collections::HashMap::new();
     for m in &monitors {
         effective_by_monitor.insert(monitor_key(m), effective_monitor_area(m));
     }
@@ -619,17 +673,23 @@ fn relocate_windows_impl(
     let mut log = String::new();
     for (i, m) in ordered_monitors.iter().enumerate() {
         log.push_str(&format!(
-            "# {}, {}, {}, {}, {}\r\n",
+            "# {}, work=({}, {}, {}, {}), abs=({}, {}, {}, {})\r\n",
             i + 1,
             m.left,
             m.top,
             m.width(),
-            m.height()
+            m.height(),
+            m.abs_left,
+            m.abs_top,
+            m.abs_width(),
+            m.abs_height()
         ));
     }
 
-    let mut cascade_cursor_by_monitor: std::collections::HashMap<(i32, i32, i32, i32), (i32, i32)> =
-        std::collections::HashMap::new();
+    let mut cascade_cursor_by_monitor: std::collections::HashMap<
+        (i32, i32, i32, i32, i32, i32, i32, i32),
+        (i32, i32),
+    > = std::collections::HashMap::new();
     for m in &monitors {
         if let Some(effective) = effective_by_monitor.get(&monitor_key(m)) {
             cascade_cursor_by_monitor

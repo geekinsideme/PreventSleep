@@ -373,7 +373,7 @@ pub fn relocate_preventsleep_window_to_origin_bottom_left() {
         // GUI モードの PreventSleep メインウィンドウだけを対象にする。
         // 以前の starts_with("PreventSleep") だと
         // "PreventSleep.txt - ... - Visual Studio Code" のようなタイトルを誤判定しうる。
-        if !(title == "PreventSleep v2.5.2" || title.starts_with("PreventSleep v")) {
+        if !(title == "PreventSleep v2.5.3" || title.starts_with("PreventSleep v")) {
             return BOOL(1);
         }
 
@@ -579,12 +579,18 @@ fn clamp_to_target_area(
     (left, top, width, height)
 }
 
-fn resolve_size_spec(spec: &SizeSpec, available: i32) -> i32 {
-    let available = available.max(1);
+fn resolve_size_spec(spec: &SizeSpec, remaining: i32, monitor_effective_axis_size: i32) -> i32 {
+    let remaining = remaining.max(1);
+    let monitor_effective_axis_size = monitor_effective_axis_size.max(1);
     match spec {
         SizeSpec::Pixels(px) => *px,
-        SizeSpec::Fill => available,
-        SizeSpec::Percent(p) => ((available as f32) * *p).round() as i32,
+        SizeSpec::Fill => remaining,
+        // % は「左上から右端/下端までの残り領域」基準
+        SizeSpec::Percent(p) => ((remaining as f32) * *p).round() as i32,
+        // @ は「対象モニタ有効表示領域の全幅/全高」基準
+        SizeSpec::MonitorPercent(p) => {
+            ((monitor_effective_axis_size as f32) * *p).round() as i32
+        }
     }
     .max(1)
 }
@@ -792,10 +798,18 @@ fn relocate_windows_impl(
                     .cloned()
                     .unwrap_or_else(|| effective_monitor_area(&target_for_size));
 
-                let available_w = (target_for_size_effective.right - left).max(1);
-                let available_h = (target_for_size_effective.bottom - top).max(1);
-                width = resolve_size_spec(&rule.w, available_w);
-                height = resolve_size_spec(&rule.h, available_h);
+                let remaining_w = (target_for_size_effective.right - left).max(1);
+                let remaining_h = (target_for_size_effective.bottom - top).max(1);
+                width = resolve_size_spec(
+                    &rule.w,
+                    remaining_w,
+                    target_for_size_effective.width(),
+                );
+                height = resolve_size_spec(
+                    &rule.h,
+                    remaining_h,
+                    target_for_size_effective.height(),
+                );
 
                 target_left = left;
                 target_top = top;

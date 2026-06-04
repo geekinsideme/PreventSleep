@@ -11,6 +11,7 @@ pub enum SizeSpec {
     Pixels(i32),
     Fill, // "*"
     Percent(f32), // "70%" など
+    MonitorPercent(f32), // "70@" など（対象モニタ有効表示領域基準）
 }
 
 #[derive(Debug, Clone)]
@@ -41,6 +42,11 @@ fn parse_size_spec(s: &str, default_px: i32) -> SizeSpec {
     let trimmed = s.trim();
     if trimmed == "*" {
         return SizeSpec::Fill;
+    }
+    if let Some(rest) = trimmed.strip_suffix('@') {
+        if let Ok(p) = rest.trim().parse::<f32>() {
+            return SizeSpec::MonitorPercent((p / 100.0).max(0.0));
+        }
     }
     if let Some(rest) = trimmed.strip_suffix('%') {
         if let Ok(p) = rest.trim().parse::<f32>() {

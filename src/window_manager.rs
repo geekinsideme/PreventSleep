@@ -16,6 +16,9 @@ use windows::Win32::UI::WindowsAndMessaging::{
 };
 use windows::Win32::System::Threading::GetCurrentProcessId;
 
+type MonitorKey = (i32, i32, i32, i32, i32, i32, i32, i32);
+type Point = (i32, i32);
+
 #[derive(Debug, Clone)]
 pub struct MonitorRect {
     pub left: i32,
@@ -43,15 +46,11 @@ impl MonitorRect {
     }
 
     pub fn from_work_and_absolute(
-        left: i32,
-        top: i32,
-        right: i32,
-        bottom: i32,
-        abs_left: i32,
-        abs_top: i32,
-        abs_right: i32,
-        abs_bottom: i32,
+        work: (i32, i32, i32, i32),
+        abs: (i32, i32, i32, i32),
     ) -> Self {
+        let (left, top, right, bottom) = work;
+        let (abs_left, abs_top, abs_right, abs_bottom) = abs;
         Self {
             left,
             top,
@@ -94,24 +93,12 @@ fn split_tall_portrait_monitor(m: &MonitorRect) -> Option<[MonitorRect; 2]> {
 
         return Some([
             MonitorRect::from_work_and_absolute(
-                m.left,
-                m.top,
-                m.right,
-                split_work_y,
-                m.abs_left,
-                m.abs_top,
-                m.abs_right,
-                abs_mid,
+                (m.left, m.top, m.right, split_work_y),
+                (m.abs_left, m.abs_top, m.abs_right, abs_mid),
             ),
             MonitorRect::from_work_and_absolute(
-                m.left,
-                split_work_y,
-                m.right,
-                m.bottom,
-                m.abs_left,
-                abs_mid,
-                m.abs_right,
-                m.abs_bottom,
+                (m.left, split_work_y, m.right, m.bottom),
+                (m.abs_left, abs_mid, m.abs_right, m.abs_bottom),
             ),
         ]);
     }
@@ -156,18 +143,12 @@ fn effective_monitor_area(m: &MonitorRect) -> MonitorRect {
     }
 
     MonitorRect::from_work_and_absolute(
-        left,
-        top,
-        right,
-        bottom,
-        m.abs_left,
-        m.abs_top,
-        m.abs_right,
-        m.abs_bottom,
+        (left, top, right, bottom),
+        (m.abs_left, m.abs_top, m.abs_right, m.abs_bottom),
     )
 }
 
-fn monitor_key(m: &MonitorRect) -> (i32, i32, i32, i32, i32, i32, i32, i32) {
+fn monitor_key(m: &MonitorRect) -> MonitorKey {
     (
         m.left,
         m.top,
@@ -288,14 +269,8 @@ unsafe extern "system" fn monitor_enum_proc(
         let wa = info.rcWork;
         let ma = info.rcMonitor;
         monitors.push(MonitorRect::from_work_and_absolute(
-            wa.left,
-            wa.top,
-            wa.right,
-            wa.bottom,
-            ma.left,
-            ma.top,
-            ma.right,
-            ma.bottom,
+            (wa.left, wa.top, wa.right, wa.bottom),
+            (ma.left, ma.top, ma.right, ma.bottom),
         ));
     }
     BOOL(1)
@@ -373,7 +348,7 @@ pub fn relocate_preventsleep_window_to_origin_bottom_left() {
         // GUI モードの PreventSleep メインウィンドウだけを対象にする。
         // 以前の starts_with("PreventSleep") だと
         // "PreventSleep.txt - ... - Visual Studio Code" のようなタイトルを誤判定しうる。
-        if !(title == "PreventSleep v2.5.3" || title.starts_with("PreventSleep v")) {
+        if !(title == "PreventSleep v2.5.4" || title.starts_with("PreventSleep v")) {
             return BOOL(1);
         }
 
@@ -660,10 +635,8 @@ fn relocate_windows_impl(
     let origin = monitor_with_origin_top_left(&monitors)
         .unwrap_or(MonitorRect::from_bounds(0, 0, 1920, 1080));
 
-    let mut effective_by_monitor: std::collections::HashMap<
-        (i32, i32, i32, i32, i32, i32, i32, i32),
-        MonitorRect,
-    > = std::collections::HashMap::new();
+    let mut effective_by_monitor: std::collections::HashMap<MonitorKey, MonitorRect> =
+        std::collections::HashMap::new();
     for m in &monitors {
         effective_by_monitor.insert(monitor_key(m), effective_monitor_area(m));
     }
@@ -692,10 +665,8 @@ fn relocate_windows_impl(
         ));
     }
 
-    let mut cascade_cursor_by_monitor: std::collections::HashMap<
-        (i32, i32, i32, i32, i32, i32, i32, i32),
-        (i32, i32),
-    > = std::collections::HashMap::new();
+    let mut cascade_cursor_by_monitor: std::collections::HashMap<MonitorKey, Point> =
+        std::collections::HashMap::new();
     for m in &monitors {
         if let Some(effective) = effective_by_monitor.get(&monitor_key(m)) {
             cascade_cursor_by_monitor
@@ -914,50 +885,6 @@ fn relocate_windows_impl(
                         height,
                         SWP_SHOWWINDOW | SWP_NOZORDER,
                     );
-                }
-
-                // 初回移動で実際の外形（DPIスケーリング/非クライアント領域など）が
-                // 変わるケースを吸収するため、実寸を再取得して同一処理内で再補正する。
-                let mut moved_rect = RECT::default();
-                let _ = GetWindowRect(hwnd, &mut moved_rect);
-                let moved_w = (moved_rect.right - moved_rect.left).max(1);
-                let moved_h = (moved_rect.bottom - moved_rect.top).max(1);
-
-                let moved_monitor = find_monitor_for_pos(moved_rect.left, moved_rect.top, &monitors)
-                    .cloned()
-                    .unwrap_or_else(|| origin.clone());
-                let moved_target = effective_by_monitor
-                    .get(&monitor_key(&moved_monitor))
-                    .cloned()
-                    .unwrap_or_else(|| effective_monitor_area(&moved_monitor));
-
-                let (fixed_left, fixed_top, fixed_w, fixed_h) = clamp_to_target_area(
-                    moved_rect.left,
-                    moved_rect.top,
-                    moved_w,
-                    moved_h,
-                    &moved_target,
-                );
-
-                if fixed_left != moved_rect.left
-                    || fixed_top != moved_rect.top
-                    || fixed_w != moved_w
-                    || fixed_h != moved_h
-                {
-                    let _ = SetWindowPos(
-                        hwnd,
-                        Some(HWND_NOTOPMOST),
-                        fixed_left,
-                        fixed_top,
-                        fixed_w,
-                        fixed_h,
-                        SWP_SHOWWINDOW | SWP_NOZORDER,
-                    );
-
-                    left = fixed_left;
-                    top = fixed_top;
-                    width = fixed_w;
-                    height = fixed_h;
                 }
             }
         }

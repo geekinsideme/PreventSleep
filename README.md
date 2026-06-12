@@ -4,7 +4,7 @@ Windows PC のスリープ・画面消灯を防止し、設定ファイルに従
 
 ## バージョン
 
-v2.5.3 (Rust 実装)
+v2.5.4 (Rust 実装)
 
 ## 機能
 
@@ -177,8 +177,8 @@ Slack,,*,*,1200,900,@3  # 3画面目で階段配置しつつ、サイズは 1200
 タグ `v*` を push すると GitHub Actions が自動的にビルドし、Release に `PreventSleep.exe` を添付します。
 
 ```powershell
-git tag v2.5.3
-git push origin v2.5.3
+git tag v2.5.4
+git push origin v2.5.4
 ```
 
 ## ライセンス

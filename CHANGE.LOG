@@ -1,5 +1,21 @@
 # CHANGE.LOG
 
+## 2.5.4 - 2026-06-12
+
+- Edge 描画安定化のため、配置処理の「2回目補正」（初回移動後の再取得・再配置）を無効化
+  - `src/window_manager.rs`
+- Clippy 警告を解消
+  - `too_many_arguments`: `from_work_and_absolute` を `(work, abs)` タプル引数へ整理
+  - `type_complexity`: `MonitorKey` / `Point` の型エイリアスを導入
+  - `src/window_manager.rs`
+- バージョンを `v2.5.4` に更新
+  - `Cargo.toml`
+  - `Cargo.lock`
+  - `src/main.rs`（ウィンドウタイトル）
+  - `build.rs`（FileVersion / ProductVersion）
+  - `README.md`
+  - `src/window_manager.rs`（PreventSleep ウィンドウ判定の厳密一致文字列）
+
 ## 2.5.3 - 2026-06-05
 
 - `PreventSleep.txt` の幅/高さフィールドで `@` 指定に対応

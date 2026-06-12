@@ -2440,7 +2440,7 @@ dependencies = [
 
 [[package]]
 name = "prevent_sleep"
-version = "2.5.3"
+version = "2.5.4"
 dependencies = [
  "csv",
  "eframe",
